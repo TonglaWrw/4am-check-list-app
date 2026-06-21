@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Zone {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  label    String
+  sections Section[]
+
+  @@map("tableZone")
+}
+
+model Section {
+  id        Int        @id @default(autoincrement())
+  name      String
+  zoneId    Int
+  zone      Zone       @relation(fields: [zoneId], references: [id])
+  attendees Attendee[]
+
+  @@map("tableSection")
+}
+
+model Attendee {
+  uid          String    @id
+  memberName   String
+  job          String?
+  sectionId    Int?
+  section      Section?  @relation(fields: [sectionId], references: [id])
+  prevSectionId Int?
+  attendance   String?
+  attendanceAt DateTime?
+  tags         String[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  skills       AttendeeSkill[]
+
+  @@index([memberName])
+  @@map("tableMemberName")
+}
+
+model Skill {
+  id        Int             @id @default(autoincrement())
+  imagePath String
+  attendees AttendeeSkill[]
+
+  @@map("tableSkill")
+}
+
+model AttendeeSkill {
+  attendeeUid String
+  skillId     Int
+  attendee    Attendee @relation(fields: [attendeeUid], references: [uid])
+  skill       Skill    @relation(fields: [skillId], references: [id])
+
+  @@id([attendeeUid, skillId])
+  @@map("tableAttendeeSkill")
+}
