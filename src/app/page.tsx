@@ -479,7 +479,7 @@ function MemberCard({ member, adminMode, onClick }: {
   member: Attendee; adminMode: boolean; onClick: () => void
 }) {
   const isLeader = member.tags?.includes('หัวหน้าทีม')
-  const borderColor = isLeader ? '#eab308' : jobColor(member.job)
+  const borderColor = jobColor(member.job)
 
   return (
     <div
