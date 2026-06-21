@@ -487,7 +487,10 @@ function MemberCard({ member, adminMode, onClick }: {
       className={`relative rounded-xl p-3 bg-white shadow-sm border-2 text-center transition-shadow ${adminMode ? 'cursor-pointer hover:shadow-md hover:ring-2 ring-blue-300' : ''}`}
       style={{ borderColor }}>
       {adminMode && <div className="absolute top-1.5 right-1.5 text-gray-300 text-xs">✎</div>}
-      {isLeader && <div className="absolute top-1.5 left-1.5 text-yellow-500 text-xs">👑</div>}
+      <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5">
+        <img src="https://cdn.discordapp.com/emojis/1485667835182059622.png" alt="4AM" width={16} height={16} className="object-contain" />
+        {isLeader && <span className="text-yellow-500 text-xs">👑</span>}
+      </div>
       <p className="font-bold text-gray-900 text-sm leading-tight mb-0.5">{member.memberName}</p>
       <div className="flex items-center justify-center gap-1 mb-1">
         {JOB_ICON[member.job] && (
