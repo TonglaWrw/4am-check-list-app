@@ -10,6 +10,7 @@ export async function POST(req: NextRequest) {
       uid: p.uid,
       memberName: p.memberName,
       job: p.job || null,
+      tags: p.tags || [],
     })),
     skipDuplicates: true,
   })

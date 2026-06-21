@@ -58,10 +58,14 @@ function SlotModal({ state, onClose, onRefresh }: {
   const [query, setQuery] = useState('')
   // new member form
   const [form, setForm] = useState({ uid: '', memberName: '', job: JOBS[0] })
+  const [newTags, setNewTags] = useState<string[]>([])
   const [newSkills, setNewSkills] = useState<Skill[]>([])
   // edit member skills
   const [memberSkills, setMemberSkills] = useState<Skill[]>(
     state.type === 'edit' ? state.member.skills : []
+  )
+  const [memberTags, setMemberTags] = useState<string[]>(
+    state.type === 'edit' ? (state.member.tags ?? []) : []
   )
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -95,6 +99,18 @@ function SlotModal({ state, onClose, onRefresh }: {
       body: JSON.stringify({ sectionId: null }),
     })
     onRefresh(); onClose()
+  }
+
+  async function toggleMemberTag(tag: string) {
+    if (state.type !== 'edit') return
+    const has = memberTags.includes(tag)
+    const tags = has ? memberTags.filter((t) => t !== tag) : [...memberTags, tag]
+    await fetch(`/api/attendees/${state.member.uid}/tags`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags }),
+    })
+    setMemberTags(tags)
+    onRefresh()
   }
 
   async function swapMember(newUid: string) {
@@ -183,7 +199,7 @@ function SlotModal({ state, onClose, onRefresh }: {
     try {
       const res = await fetch('/api/attendees', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ uid: form.uid.trim(), memberName: form.memberName.trim(), job: form.job }]),
+        body: JSON.stringify([{ uid: form.uid.trim(), memberName: form.memberName.trim(), job: form.job, tags: newTags }]),
       })
       if (!res.ok) { setErr('UID ซ้ำหรือเกิดข้อผิดพลาด'); setSaving(false); return }
       for (const skill of newSkills) {
@@ -222,6 +238,19 @@ function SlotModal({ state, onClose, onRefresh }: {
             <p className="text-xs text-gray-400 mt-0.5">UID: {m.uid}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+
+        {/* Tags */}
+        <div className="flex gap-2 mb-4">
+          {[{ tag: 'หัวหน้าทีม', icon: '👑', cls: 'border-yellow-400 text-yellow-700 bg-yellow-50' }, { tag: 'อาวุธเทพ', icon: '⚔', cls: 'border-orange-400 text-orange-700 bg-orange-50' }].map(({ tag, icon, cls }) => {
+            const has = memberTags.includes(tag)
+            return (
+              <button key={tag} type="button" onClick={() => toggleMemberTag(tag)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${has ? cls : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
+                <span>{icon}</span>{tag}
+              </button>
+            )
+          })}
         </div>
 
         {/* Edit Tabs */}
@@ -415,6 +444,22 @@ function SlotModal({ state, onClose, onRefresh }: {
             {newSkills.length > 0 && (
               <p className="text-xs text-blue-600 mt-1.5 font-medium">เลือกแล้ว {newSkills.length} skill</p>
             )}
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">Tag</label>
+            <div className="flex gap-2">
+              {[{ tag: 'หัวหน้าทีม', icon: '👑', cls: 'border-yellow-400 text-yellow-700 bg-yellow-50' }, { tag: 'อาวุธเทพ', icon: '⚔', cls: 'border-orange-400 text-orange-700 bg-orange-50' }].map(({ tag, icon, cls }) => {
+                const has = newTags.includes(tag)
+                return (
+                  <button key={tag} type="button"
+                    onClick={() => setNewTags((prev) => has ? prev.filter((t) => t !== tag) : [...prev, tag])}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${has ? cls : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
+                    <span>{icon}</span>{tag}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {err && <p className="text-red-500 text-xs bg-red-50 rounded-lg px-3 py-2">{err}</p>}
