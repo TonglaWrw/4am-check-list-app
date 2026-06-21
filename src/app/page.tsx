@@ -14,7 +14,16 @@ type Zone = { id: number; name: string; label: string; sections: Section[] }
 const JOBS = ['Ironclad', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'Dragonsvelte']
 const JOB_COLOR: Record<string, string> = {
   Ironclad: '#f59e0b', BLOODSTORM: '#ef4444', CELESTUNE: '#3b82f6',
-  NIGHTWAKER: '#8b5cf6', NUMINA: '#10b981', SYLPH: '#ec4899', Dragonsvelte: '#f97316',
+  NIGHTWAKER: '#06b6d4', NUMINA: '#a855f7', SYLPH: '#ec4899', Dragonsvelte: '#22c55e',
+}
+const JOB_ICON: Record<string, string> = {
+  Ironclad: 'https://cdn.discordapp.com/emojis/1497898275871789166.png',
+  SYLPH: 'https://cdn.discordapp.com/emojis/1497905719146709185.png',
+  NUMINA: 'https://cdn.discordapp.com/emojis/1489512270202535987.png',
+  BLOODSTORM: 'https://cdn.discordapp.com/emojis/1489501000652820510.png',
+  NIGHTWAKER: 'https://cdn.discordapp.com/emojis/1497905458139107429.png',
+  CELESTUNE: 'https://cdn.discordapp.com/emojis/1489508116403060846.png',
+  Dragonsvelte: 'https://cdn.discordapp.com/emojis/1489508543307583488.png',
 }
 function jobColor(job: string) { return JOB_COLOR[job] ?? '#6b7280' }
 const SPECIAL = ['ลา', 'สำรอง']
@@ -206,7 +215,10 @@ function SlotModal({ state, onClose, onRefresh }: {
                 <span className="bg-gradient-to-r from-yellow-400 to-orange-400 text-white text-xs font-bold px-2 py-0.5 rounded-full">⚔ อาวุธเทพ</span>
               )}
             </div>
-            <p className="text-sm font-semibold" style={{ color: jobColor(m.job) }}>{m.job}</p>
+            <div className="flex items-center gap-1">
+              {JOB_ICON[m.job] && <img src={JOB_ICON[m.job]} alt={m.job} width={16} height={16} className="object-contain" />}
+              <p className="text-sm font-semibold" style={{ color: jobColor(m.job) }}>{m.job}</p>
+            </div>
             <p className="text-xs text-gray-400 mt-0.5">UID: {m.uid}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
@@ -284,7 +296,10 @@ function SlotModal({ state, onClose, onRefresh }: {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold text-gray-900 text-sm">{a.memberName}</p>
-                        <p className="text-xs font-medium" style={{ color: jobColor(a.job) }}>{a.job}</p>
+                        <div className="flex items-center gap-1">
+                          {JOB_ICON[a.job] && <img src={JOB_ICON[a.job]} alt={a.job} width={12} height={12} className="object-contain" />}
+                          <p className="text-xs font-medium" style={{ color: jobColor(a.job) }}>{a.job}</p>
+                        </div>
                       </div>
                       <span className="text-xs text-gray-400 shrink-0">{a.uid}</span>
                     </button>
@@ -339,7 +354,10 @@ function SlotModal({ state, onClose, onRefresh }: {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-gray-900 text-sm">{a.memberName}</p>
-                      <p className="text-xs font-medium" style={{ color: jobColor(a.job) }}>{a.job}</p>
+                      <div className="flex items-center gap-1">
+                        {JOB_ICON[a.job] && <img src={JOB_ICON[a.job]} alt={a.job} width={12} height={12} className="object-contain" />}
+                        <p className="text-xs font-medium" style={{ color: jobColor(a.job) }}>{a.job}</p>
+                      </div>
                     </div>
                     <span className="text-xs text-gray-400 shrink-0">{a.uid}</span>
                   </button>
@@ -426,7 +444,12 @@ function MemberCard({ member, adminMode, onClick }: {
       {adminMode && <div className="absolute top-1.5 right-1.5 text-gray-300 text-xs">✎</div>}
       {isLeader && <div className="absolute top-1.5 left-1.5 text-yellow-500 text-xs">👑</div>}
       <p className="font-bold text-gray-900 text-sm leading-tight mb-0.5">{member.memberName}</p>
-      <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: jobColor(member.job) }}>{member.job}</p>
+      <div className="flex items-center justify-center gap-1 mb-1">
+        {JOB_ICON[member.job] && (
+          <img src={JOB_ICON[member.job]} alt={member.job} width={14} height={14} className="object-contain" />
+        )}
+        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: jobColor(member.job) }}>{member.job}</p>
+      </div>
       {member.tags?.includes('อาวุธเทพ') && (
         <span className="inline-block bg-gradient-to-r from-yellow-400 to-orange-400 text-white text-xs font-bold px-2 py-0.5 rounded-full mb-1">⚔ อาวุธเทพ</span>
       )}
