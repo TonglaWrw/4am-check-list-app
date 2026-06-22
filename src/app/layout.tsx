@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "4amเช็คชื่อเว้ย",
   description: "4AM Check-in App",
+  icons: {
+    icon: "/logo-4am.png",
+  },
 };
 
 export default function RootLayout({

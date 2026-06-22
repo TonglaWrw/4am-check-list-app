@@ -6,9 +6,9 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
 const zones = [
-  { name: "TeamA", label: "A STRATEGIC ZONE", sections: ["A1","A2","A3","A4","A5"] },
-  { name: "TeamB", label: "B STRATEGIC ZONE", sections: ["B1","B2","B3","B4","B5"] },
-  { name: "TeamC", label: "C STRATEGIC ZONE", sections: ["C1","C2","C3","C4","C5"] },
+  { name: "TeamA", label: "A", sections: ["A1","A2","A3","A4","A5"] },
+  { name: "TeamB", label: "B", sections: ["B1","B2","B3","B4","B5"] },
+  { name: "TeamC", label: "C", sections: ["C1","C2","C3","C4","C5"] },
 ];
 
 async function main() {

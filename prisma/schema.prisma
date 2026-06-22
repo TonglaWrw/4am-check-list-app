@@ -19,25 +19,25 @@ model Section {
   id        Int        @id @default(autoincrement())
   name      String
   zoneId    Int
-  zone      Zone       @relation(fields: [zoneId], references: [id])
   attendees Attendee[]
+  zone      Zone       @relation(fields: [zoneId], references: [id])
 
   @@map("tableSection")
 }
 
 model Attendee {
-  uid          String    @id
-  memberName   String
-  job          String?
-  sectionId    Int?
-  section      Section?  @relation(fields: [sectionId], references: [id])
+  memberName    String
+  job           String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  uid           String          @id
+  attendance    String?
+  attendanceAt  DateTime?
+  sectionId     Int?
+  tags          String[]
   prevSectionId Int?
-  attendance   String?
-  attendanceAt DateTime?
-  tags         String[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  skills       AttendeeSkill[]
+  skills        AttendeeSkill[]
+  section       Section?        @relation(fields: [sectionId], references: [id])
 
   @@index([memberName])
   @@map("tableMemberName")

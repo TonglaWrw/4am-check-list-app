@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
 
 type Skill = { id: number; imagePath: string }
@@ -32,9 +33,10 @@ const CAPACITY = 6
 // ─── Modal wrapper ────────────────────────────────────────────────────────────
 function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        className="rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)', border: '1px solid rgba(255,255,255,0.15)' }}
         onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
@@ -45,7 +47,7 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
 // ─── Slot Modal (add / edit) ──────────────────────────────────────────────────
 type ModalState =
   | { type: 'add'; sectionId: number; sectionName: string }
-  | { type: 'edit'; member: Attendee; sectionId: number }
+  | { type: 'edit'; member: Attendee; sectionId: number; teamAttendees: Attendee[] }
 
 function SlotModal({ state, onClose, onRefresh }: {
   state: ModalState; onClose: () => void; onRefresh: () => void
@@ -70,6 +72,7 @@ function SlotModal({ state, onClose, onRefresh }: {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const [leaderConflict, setLeaderConflict] = useState<Attendee | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const editFileRef = useRef<HTMLInputElement>(null)
 
@@ -104,12 +107,43 @@ function SlotModal({ state, onClose, onRefresh }: {
   async function toggleMemberTag(tag: string) {
     if (state.type !== 'edit') return
     const has = memberTags.includes(tag)
+
+    // Check for leader conflict before assigning
+    if (tag === 'หัวหน้าทีม' && !has) {
+      const currentLeader = state.teamAttendees.find(
+        (a) => a.uid !== state.member.uid && a.tags?.includes('หัวหน้าทีม')
+      )
+      if (currentLeader) {
+        setLeaderConflict(currentLeader)
+        return
+      }
+    }
+
     const tags = has ? memberTags.filter((t) => t !== tag) : [...memberTags, tag]
     await fetch(`/api/attendees/${state.member.uid}/tags`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tags }),
     })
     setMemberTags(tags)
+    onRefresh()
+  }
+
+  async function confirmLeaderSwap() {
+    if (state.type !== 'edit' || !leaderConflict) return
+    // Remove leader from old
+    const oldTags = (leaderConflict.tags ?? []).filter((t) => t !== 'หัวหน้าทีม')
+    await fetch(`/api/attendees/${leaderConflict.uid}/tags`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: oldTags }),
+    })
+    // Set leader on new
+    const newTags = [...memberTags.filter((t) => t !== 'หัวหน้าทีม'), 'หัวหน้าทีม']
+    await fetch(`/api/attendees/${state.member.uid}/tags`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: newTags }),
+    })
+    setMemberTags(newTags)
+    setLeaderConflict(null)
     onRefresh()
   }
 
@@ -226,10 +260,7 @@ function SlotModal({ state, onClose, onRefresh }: {
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               {m.tags?.includes('หัวหน้าทีม') && <span className="text-yellow-500">👑</span>}
-              <h2 className="text-lg font-bold text-gray-900">{m.memberName}</h2>
-              {m.tags?.includes('อาวุธเทพ') && (
-                <span className="bg-gradient-to-r from-yellow-400 to-orange-400 text-white text-xs font-bold px-2 py-0.5 rounded-full">⚔ อาวุธเทพ</span>
-              )}
+              <h2 className="text-lg font-bold text-white">{m.memberName}</h2>
             </div>
             <div className="flex items-center gap-1">
               {JOB_ICON[m.job] && <img src={JOB_ICON[m.job]} alt={m.job} width={16} height={16} className="object-contain" />}
@@ -237,30 +268,51 @@ function SlotModal({ state, onClose, onRefresh }: {
             </div>
             <p className="text-xs text-gray-400 mt-0.5">UID: {m.uid}</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">✕</button>
         </div>
 
         {/* Tags */}
         <div className="flex gap-2 mb-4">
-          {[{ tag: 'หัวหน้าทีม', icon: '👑', cls: 'border-yellow-400 text-yellow-700 bg-yellow-50' }, { tag: 'อาวุธเทพ', icon: '⚔', cls: 'border-orange-400 text-orange-700 bg-orange-50' }].map(({ tag, icon, cls }) => {
-            const has = memberTags.includes(tag)
+          {(() => {
+            const has = memberTags.includes('หัวหน้าทีม')
             return (
-              <button key={tag} type="button" onClick={() => toggleMemberTag(tag)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${has ? cls : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                <span>{icon}</span>{tag}
+              <button type="button" onClick={() => toggleMemberTag('หัวหน้าทีม')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${has ? 'border-yellow-400 text-yellow-300 bg-yellow-900/40' : 'border-white/20 text-gray-400 hover:border-white/40'}`}>
+                <span>👑</span>หัวหน้าทีม
               </button>
             )
-          })}
+          })()}
         </div>
 
+        {/* Leader conflict confirmation */}
+        {leaderConflict && (
+          <div className="mb-4 p-3 rounded-xl border border-yellow-500/40 bg-yellow-900/20">
+            <p className="text-yellow-300 text-sm font-semibold mb-1">⚠️ มีหัวหน้าทีมอยู่แล้ว</p>
+            <p className="text-gray-300 text-xs mb-3">
+              <span className="text-white font-bold">{leaderConflict.memberName}</span> เป็นหัวหน้าทีมอยู่
+              ต้องการเปลี่ยนให้ <span className="text-white font-bold">{m.memberName}</span> เป็นหัวหน้าทีมแทนไหม?
+            </p>
+            <div className="flex gap-2">
+              <button onClick={confirmLeaderSwap}
+                className="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg py-1.5 text-xs font-semibold transition-colors">
+                เปลี่ยนเลย
+              </button>
+              <button onClick={() => setLeaderConflict(null)}
+                className="flex-1 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg py-1.5 text-xs transition-colors">
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Edit Tabs */}
-        <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1">
+        <div className="flex gap-1 mb-4 bg-black/30 rounded-xl p-1">
           <button onClick={() => setEditTab('skills')}
-            className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${editTab === 'skills' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${editTab === 'skills' ? 'bg-white/20 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
             Skill
           </button>
           <button onClick={() => { setEditTab('swap'); setQuery('') }}
-            className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${editTab === 'swap' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${editTab === 'swap' ? 'bg-white/20 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
             เปลี่ยนคน
           </button>
         </div>
@@ -269,7 +321,7 @@ function SlotModal({ state, onClose, onRefresh }: {
           <div>
             {/* Current skills */}
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Skill ที่มี ({memberSkills.length})</p>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Skill ที่มี ({memberSkills.length})</p>
               <label className={`cursor-pointer text-xs px-3 py-1 rounded-full font-medium transition-colors ${uploading ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
                 {uploading ? 'กำลังอัปโหลด...' : '+ อัปโหลดรูป'}
                 <input ref={editFileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUploadForEdit} disabled={uploading} />
@@ -286,11 +338,11 @@ function SlotModal({ state, onClose, onRefresh }: {
                 ))}
               </div>
             )}
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">คลิกเพื่อเพิ่ม/ลบ</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">คลิกเพื่อเพิ่ม/ลบ</p>
             {allSkills.length === 0
               ? <p className="text-gray-400 text-sm text-center py-4">ยังไม่มีรูป skill</p>
               : (
-                <div className="grid grid-cols-8 gap-1.5 max-h-40 overflow-y-auto bg-gray-50 rounded-xl p-2">
+                <div className="grid grid-cols-8 gap-1.5 max-h-40 overflow-y-auto bg-black/20 rounded-xl p-2">
                   {allSkills.map((s) => {
                     const has = memberSkills.some((ms) => ms.id === s.id)
                     return (
@@ -308,23 +360,23 @@ function SlotModal({ state, onClose, onRefresh }: {
 
         {editTab === 'swap' && (
           <div>
-            <p className="text-xs text-gray-400 mb-3">เลือกสมาชิกใหม่เพื่อสลับกับ <span className="font-semibold text-gray-700">{m.memberName}</span></p>
+            <p className="text-xs text-gray-400 mb-3">เลือกสมาชิกใหม่เพื่อสลับกับ <span className="font-semibold text-white">{m.memberName}</span></p>
             <input value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="ค้นหาชื่อหรือ UID..."
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-blue-400 text-gray-900 placeholder-gray-400" />
+              className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-blue-400 text-white placeholder-gray-500 bg-black/30" />
             {unassigned.length === 0
               ? <p className="text-gray-400 text-sm text-center py-4">ไม่มีสมาชิกที่ยังไม่ได้ assign</p>
               : (
                 <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                   {unassigned.map((a) => (
                     <button key={a.uid} onClick={() => swapMember(a.uid)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors text-left">
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 border border-transparent hover:border-white/20 transition-colors text-left">
                       <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
                         style={{ background: jobColor(a.job) }}>
                         {a.memberName[0]}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-gray-900 text-sm">{a.memberName}</p>
+                        <p className="font-semibold text-white text-sm">{a.memberName}</p>
                         <div className="flex items-center gap-1">
                           {JOB_ICON[a.job] && <img src={JOB_ICON[a.job]} alt={a.job} width={12} height={12} className="object-contain" />}
                           <p className="text-xs font-medium" style={{ color: jobColor(a.job) }}>{a.job}</p>
@@ -339,9 +391,9 @@ function SlotModal({ state, onClose, onRefresh }: {
           </div>
         )}
 
-        <hr className="my-4" />
+        <hr className="my-4 border-white/10" />
         <button onClick={removeFromSection}
-          className="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl py-2.5 text-sm font-medium transition-colors">
+          className="w-full bg-red-900/30 hover:bg-red-800/40 text-red-400 border border-red-500/30 rounded-xl py-2.5 text-sm font-medium transition-colors">
           ย้ายออกจาก section
         </button>
       </Modal>
@@ -352,14 +404,14 @@ function SlotModal({ state, onClose, onRefresh }: {
   return (
     <Modal onClose={onClose}>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold text-gray-900">เพิ่มสมาชิก → <span className="text-blue-600">{state.sectionName}</span></h2>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        <h2 className="text-lg font-bold text-white">เพิ่มสมาชิก → <span className="text-blue-400">{state.sectionName}</span></h2>
+        <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">✕</button>
       </div>
 
-      <div className="flex gap-1 mb-5 bg-gray-100 rounded-xl p-1">
+      <div className="flex gap-1 mb-5 bg-black/30 rounded-xl p-1">
         {(['pick', 'new'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-white/20 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
             {t === 'pick' ? 'เลือกสมาชิก' : 'เพิ่มสมาชิกใหม่'}
           </button>
         ))}
@@ -369,20 +421,20 @@ function SlotModal({ state, onClose, onRefresh }: {
         <div>
           <input value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="ค้นหาชื่อหรือ UID..."
-            className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-blue-400 text-gray-900 placeholder-gray-400" />
+            className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-blue-400 text-white placeholder-gray-500 bg-black/30" />
           {unassigned.length === 0
             ? <p className="text-gray-400 text-sm text-center py-8">ไม่มีสมาชิกที่ยังไม่ได้ assign</p>
             : (
               <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
                 {unassigned.map((a) => (
                   <button key={a.uid} onClick={() => assignExisting(a.uid)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors text-left">
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 border border-transparent hover:border-white/20 transition-colors text-left">
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
                       style={{ background: jobColor(a.job) }}>
                       {a.memberName[0]}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-gray-900 text-sm">{a.memberName}</p>
+                      <p className="font-semibold text-white text-sm">{a.memberName}</p>
                       <div className="flex items-center gap-1">
                         {JOB_ICON[a.job] && <img src={JOB_ICON[a.job]} alt={a.job} width={12} height={12} className="object-contain" />}
                         <p className="text-xs font-medium" style={{ color: jobColor(a.job) }}>{a.job}</p>
@@ -399,73 +451,73 @@ function SlotModal({ state, onClose, onRefresh }: {
       {tab === 'new' && (
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">UID</label>
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5 block">UID</label>
             <input value={form.uid} onChange={(e) => setForm((f) => ({ ...f, uid: e.target.value }))}
               placeholder="เช่น 9405303500"
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-gray-900 placeholder-gray-400" />
+              className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-white placeholder-gray-500 bg-black/30" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">ชื่อ</label>
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5 block">ชื่อ</label>
             <input value={form.memberName} onChange={(e) => setForm((f) => ({ ...f, memberName: e.target.value }))}
               placeholder="ชื่อ member"
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-gray-900 placeholder-gray-400" />
+              className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-white placeholder-gray-500 bg-black/30" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">อาชีพ</label>
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5 block">อาชีพ</label>
             <select value={form.job} onChange={(e) => setForm((f) => ({ ...f, job: e.target.value }))}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-gray-900">
+              className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 text-white bg-[#1a1a2e]">
               {JOBS.map((j) => <option key={j} value={j}>{j}</option>)}
             </select>
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Skill</label>
-              <label className={`cursor-pointer text-xs px-3 py-1 rounded-full font-medium transition-colors ${uploading ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+              <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Skill</label>
+              <label className={`cursor-pointer text-xs px-3 py-1 rounded-full font-medium transition-colors ${uploading ? 'bg-white/10 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
                 {uploading ? 'กำลังอัปโหลด...' : '+ อัปโหลดรูป'}
                 <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
               </label>
             </div>
             {allSkills.length > 0 ? (
-              <div className="grid grid-cols-8 gap-1.5 max-h-32 overflow-y-auto bg-gray-50 rounded-xl p-2">
+              <div className="grid grid-cols-8 gap-1.5 max-h-32 overflow-y-auto bg-black/20 rounded-xl p-2">
                 {allSkills.map((s) => {
                   const selected = newSkills.some((ns) => ns.id === s.id)
                   return (
                     <button key={s.id} type="button" onClick={() => toggleSkill(s)}
-                      className={`rounded-lg overflow-hidden border-2 transition-colors aspect-square ${selected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-transparent hover:border-gray-300'}`}>
+                      className={`rounded-lg overflow-hidden border-2 transition-colors aspect-square ${selected ? 'border-blue-500 ring-2 ring-blue-400/30' : 'border-transparent hover:border-white/30'}`}>
                       <Image src={s.imagePath} alt="skill" width={40} height={40} className="object-cover w-full h-full" />
                     </button>
                   )
                 })}
               </div>
             ) : (
-              <p className="text-xs text-gray-400 text-center py-3 bg-gray-50 rounded-xl">ยังไม่มีรูป skill — อัปโหลดได้เลย</p>
+              <p className="text-xs text-gray-400 text-center py-3 bg-black/20 rounded-xl">ยังไม่มีรูป skill — อัปโหลดได้เลย</p>
             )}
             {newSkills.length > 0 && (
-              <p className="text-xs text-blue-600 mt-1.5 font-medium">เลือกแล้ว {newSkills.length} skill</p>
+              <p className="text-xs text-blue-400 mt-1.5 font-medium">เลือกแล้ว {newSkills.length} skill</p>
             )}
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">Tag</label>
+            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">Tag</label>
             <div className="flex gap-2">
-              {[{ tag: 'หัวหน้าทีม', icon: '👑', cls: 'border-yellow-400 text-yellow-700 bg-yellow-50' }, { tag: 'อาวุธเทพ', icon: '⚔', cls: 'border-orange-400 text-orange-700 bg-orange-50' }].map(({ tag, icon, cls }) => {
-                const has = newTags.includes(tag)
+              {(() => {
+                const has = newTags.includes('หัวหน้าทีม')
                 return (
-                  <button key={tag} type="button"
-                    onClick={() => setNewTags((prev) => has ? prev.filter((t) => t !== tag) : [...prev, tag])}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${has ? cls : 'border-gray-200 text-gray-400 hover:border-gray-300'}`}>
-                    <span>{icon}</span>{tag}
+                  <button type="button"
+                    onClick={() => setNewTags((prev) => has ? prev.filter((t) => t !== 'หัวหน้าทีม') : [...prev, 'หัวหน้าทีม'])}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${has ? 'border-yellow-400 text-yellow-300 bg-yellow-900/40' : 'border-white/20 text-gray-400 hover:border-white/40'}`}>
+                    <span>👑</span>หัวหน้าทีม
                   </button>
                 )
-              })}
+              })()}
             </div>
           </div>
 
-          {err && <p className="text-red-500 text-xs bg-red-50 rounded-lg px-3 py-2">{err}</p>}
+          {err && <p className="text-red-400 text-xs bg-red-900/30 border border-red-500/30 rounded-lg px-3 py-2">{err}</p>}
 
           <button type="submit" disabled={saving}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-300 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-white/10 disabled:text-gray-500 text-white rounded-xl py-2.5 text-sm font-semibold transition-colors">
             {saving ? 'กำลังบันทึก...' : 'เพิ่มสมาชิก'}
           </button>
         </form>
@@ -474,39 +526,195 @@ function SlotModal({ state, onClose, onRefresh }: {
   )
 }
 
-// ─── Member Card ──────────────────────────────────────────────────────────────
-function MemberCard({ member, adminMode, onClick }: {
+// ─── Compact Member Row (for overview) ───────────────────────────────────────
+function CompactMemberRow({ member, adminMode, onClick }: {
   member: Attendee; adminMode: boolean; onClick: () => void
 }) {
   const isLeader = member.tags?.includes('หัวหน้าทีม')
-  const borderColor = jobColor(member.job)
+  const color = jobColor(member.job)
+  return (
+    <div onClick={adminMode ? onClick : undefined}
+      className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all ${adminMode ? 'cursor-pointer hover:bg-white/10' : ''}`}
+      style={{ borderLeft: `3px solid ${color}`, background: isLeader ? 'rgba(245,158,11,0.08)' : 'rgba(255,255,255,0.04)' }}>
+      {isLeader && <span className="text-yellow-400 text-xs leading-none">👑</span>}
+      <span className="text-white text-xs font-semibold truncate flex-1">{member.memberName}</span>
+      {JOB_ICON[member.job] && <img src={JOB_ICON[member.job]} alt={member.job} width={12} height={12} className="object-contain shrink-0" />}
+    </div>
+  )
+}
+
+// ─── Compact Empty Slot ───────────────────────────────────────────────────────
+function CompactEmptySlot({ adminMode, onClick }: { adminMode: boolean; onClick: () => void }) {
+  return (
+    <div onClick={adminMode ? onClick : undefined}
+      className={`flex items-center justify-center px-2 py-1 rounded-lg border border-dashed text-xs transition-all ${adminMode ? 'border-blue-500/40 text-blue-400/60 hover:bg-blue-500/10 cursor-pointer' : 'border-white/10 text-white/15'}`}>
+      {adminMode ? '+ ADD' : 'ว่าง'}
+    </div>
+  )
+}
+
+// ─── Zone Panel (shows all sections of a zone) ────────────────────────────────
+function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false }: {
+  zone: Zone; adminMode: boolean; search: string; compact?: boolean
+  onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
+}) {
+  const q = search.trim().toLowerCase()
+  const sections = zone.sections.filter((s) => !SPECIAL.includes(s.name))
+  return (
+    <div className={`${compact ? '' : 'h-full'} flex flex-col gap-2 p-3 rounded-xl`}
+      style={{ background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(3px)' }}>
+      <div className="flex items-center gap-2 shrink-0">
+        <Image src="/logo-4am.png" alt="4AM" width={28} height={28} className="object-contain" />
+        <p className="text-xs font-bold text-white/60 uppercase tracking-widest">TACTICAL HUB — {zone.name.replace('Team', '')}</p>
+      </div>
+      <div className={`flex gap-2 ${compact ? '' : 'flex-1 min-h-0'}`}>
+        {sections.map((sec) => {
+          const sorted = [...sec.attendees].sort((a, b) => (a.tags?.includes('หัวหน้าทีม') ? 0 : 1) - (b.tags?.includes('หัวหน้าทีม') ? 0 : 1))
+          const filtered = q ? sorted.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) : sorted
+          const emptyCount = Math.max(0, CAPACITY - sorted.length)
+          return (
+            <div key={sec.id} className={`flex-1 flex flex-col gap-1.5 min-w-0 ${compact ? '' : 'overflow-y-auto'}`}>
+              <p className="text-center text-white/40 text-xs font-medium shrink-0">× {sec.name} <span className="text-white/25">({sec.attendees.length})</span></p>
+              {filtered.map((m) => (
+                <MemberCard key={m.uid} member={m} adminMode={adminMode} compact={compact} onClick={() => onSlotClick(sec, 'edit', m)} />
+              ))}
+              {!q && Array.from({ length: emptyCount }, (_, i) => (
+                <EmptySlot key={i} adminMode={adminMode} onClick={() => onSlotClick(sec, 'add')} />
+              ))}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Special Zone Panel (ลา / สำรอง) ─────────────────────────────────────────
+function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick }: {
+  label: string; sections: Section[]; adminMode: boolean; search: string
+  onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
+}) {
+  const q = search.trim().toLowerCase()
+  const allMembers = sections.flatMap((s) => {
+    const sorted = [...s.attendees].sort((a, b) => (a.tags?.includes('หัวหน้าทีม') ? 0 : 1) - (b.tags?.includes('หัวหน้าทีม') ? 0 : 1))
+    return q ? sorted.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) : sorted
+  })
+  const sec = sections[0]
+  return (
+    <div className="h-full flex flex-col gap-2 p-3 rounded-xl"
+      style={{ background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(3px)' }}>
+      <div className="flex items-center gap-2 shrink-0">
+        <Image src="/logo-4am.png" alt="4AM" width={28} height={28} className="object-contain" />
+        <p className="text-xs font-bold text-white/60 uppercase tracking-widest">TACTICAL HUB — {label} <span className="text-white/30 font-normal normal-case">({allMembers.length})</span></p>
+
+      </div>
+      <div className="flex-1 overflow-y-auto flex flex-col gap-1.5">
+        {allMembers.map((m) => (
+          <MemberCard key={m.uid} member={m} adminMode={adminMode}
+            onClick={() => sec && onSlotClick(sec, 'edit', m)} />
+        ))}
+        {allMembers.length === 0 && <p className="text-white/20 text-xs text-center py-4">ไม่มี</p>}
+        {adminMode && sec && <EmptySlot adminMode={adminMode} onClick={() => onSlotClick(sec, 'add')} />}
+      </div>
+    </div>
+  )
+}
+
+// ─── Member Card ──────────────────────────────────────────────────────────────
+function MemberCard({ member, adminMode, onClick, compact = false }: {
+  member: Attendee; adminMode: boolean; onClick: () => void; compact?: boolean
+}) {
+  const [showSkillTooltip, setShowSkillTooltip] = useState(false)
+  const isLeader = member.tags?.includes('หัวหน้าทีม')
+  const color = jobColor(member.job)
+  const borderColor = color
+  const r = parseInt(color.slice(1, 3), 16)
+  const g = parseInt(color.slice(3, 5), 16)
+  const b = parseInt(color.slice(5, 7), 16)
+
+  const visibleSkills = member.skills.slice(0, 5)
+  const hiddenSkills = member.skills.slice(5)
 
   return (
     <div
       onClick={adminMode ? onClick : undefined}
-      className={`relative rounded-xl p-3 bg-white shadow-sm border-2 text-center transition-shadow ${adminMode ? 'cursor-pointer hover:shadow-md hover:ring-2 ring-blue-300' : ''}`}
-      style={{ borderColor }}>
-      {adminMode && <div className="absolute top-1.5 right-1.5 text-gray-300 text-xs">✎</div>}
-      <div className="absolute top-1.5 left-1.5 flex items-center gap-0.5">
-        <img src="https://cdn.discordapp.com/emojis/1485667835182059622.png" alt="4AM" width={16} height={16} className="object-contain" />
-        {isLeader && <span className="text-yellow-500 text-xs">👑</span>}
-      </div>
-      <p className="font-bold text-gray-900 text-sm leading-tight mb-0.5">{member.memberName}</p>
-      <div className="flex items-center justify-center gap-1 mb-1">
-        {JOB_ICON[member.job] && (
-          <img src={JOB_ICON[member.job]} alt={member.job} width={14} height={14} className="object-contain" />
-        )}
-        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: jobColor(member.job) }}>{member.job}</p>
-      </div>
-      {member.tags?.includes('อาวุธเทพ') && (
-        <span className="inline-block bg-gradient-to-r from-yellow-400 to-orange-400 text-white text-xs font-bold px-2 py-0.5 rounded-full mb-1">⚔ อาวุธเทพ</span>
+      className={`relative rounded-xl overflow-hidden transition-all ${adminMode ? 'cursor-pointer hover:brightness-110' : ''}`}
+      style={{
+        borderWidth: 2,
+        borderStyle: 'solid',
+        borderColor,
+        background: `rgba(${r},${g},${b},0.12)`,
+        boxShadow: isLeader ? `0 0 14px rgba(245,158,11,0.35)` : `0 2px 8px rgba(0,0,0,0.4)`,
+        height: '110px',
+      }}>
+
+      {/* Job icon watermark left */}
+      {JOB_ICON[member.job] && (
+        <img src={JOB_ICON[member.job]} alt=""
+          className="absolute left-1 top-1/2 -translate-y-1/2 object-contain pointer-events-none select-none"
+          style={{ width: 68, height: 68, opacity: 0.15, filter: 'saturate(0.5)' }} />
       )}
-      {member.skills.length > 0 && (
-        <div className="flex justify-center gap-1 mb-1.5 flex-wrap">
-          {member.skills.map((s) => <Image key={s.id} src={s.imagePath} alt="skill" width={18} height={18} className="rounded-full object-cover" />)}
+
+      {adminMode && <div className="absolute top-1.5 left-1.5 text-white/25 text-xs z-10">✎</div>}
+
+      {/* All content right-aligned */}
+      <div className="relative z-10 pr-3 pl-3 pt-2 pb-2 text-right h-full flex flex-col justify-between overflow-hidden">
+
+        {/* Name */}
+        <div className="flex items-center justify-end gap-1 mb-0.5">
+          {isLeader && <span className="text-yellow-400 text-xs">👑</span>}
+          <p className="font-bold leading-tight truncate" style={{ color: '#c9a84c', fontSize: '0.85rem' }}>{member.memberName}</p>
         </div>
-      )}
-      <p className="text-gray-400 text-xs">UID: {member.uid}</p>
+
+        {/* Job + icon */}
+        <div className="flex items-center justify-end gap-1 mb-1.5">
+          <p className="text-xs font-black uppercase tracking-widest" style={{ color }}>{member.job}</p>
+          {JOB_ICON[member.job] && (
+            <img src={JOB_ICON[member.job]} alt={member.job} width={14} height={14} className="object-contain" />
+          )}
+        </div>
+
+        {/* Skills (max 5 + click modal) */}
+        {member.skills.length > 0 && (
+          <div className="flex justify-end gap-1 mb-1.5 items-center">
+            {visibleSkills.map((s) => (
+              <Image key={s.id} src={s.imagePath} alt="skill" width={22} height={22} className="rounded-full object-cover" />
+            ))}
+            {hiddenSkills.length > 0 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowSkillTooltip(true) }}
+                className="w-6 h-6 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white text-xs font-bold hover:bg-white/30 transition-colors">
+                +{hiddenSkills.length}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Skill modal — rendered via portal outside card */}
+        {showSkillTooltip && createPortal(
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50"
+            onClick={() => setShowSkillTooltip(false)}>
+            <div className="rounded-2xl p-5 max-w-sm w-full mx-4"
+              style={{ background: 'linear-gradient(135deg, #1a1a2e, #16213e)', border: '1px solid rgba(255,255,255,0.15)' }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-white font-bold">{member.memberName}</p>
+                <button onClick={() => setShowSkillTooltip(false)} className="text-gray-400 hover:text-white text-xl">✕</button>
+              </div>
+              <p className="text-gray-400 text-xs mb-3 uppercase tracking-wide">Skills ทั้งหมด ({member.skills.length})</p>
+              <div className="flex gap-3 flex-wrap justify-center">
+                {member.skills.map((s) => (
+                  <Image key={s.id} src={s.imagePath} alt="skill" width={52} height={52} className="rounded-full object-cover border-2 border-white/20" />
+                ))}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* UID */}
+        <p className="text-white/30 text-xs">UID: {member.uid}</p>
+      </div>
     </div>
   )
 }
@@ -516,7 +724,8 @@ function EmptySlot({ adminMode, onClick }: { adminMode: boolean; onClick: () => 
   return (
     <div
       onClick={adminMode ? onClick : undefined}
-      className={`rounded-xl border-2 border-dashed text-center py-6 transition-colors ${adminMode ? 'border-blue-300 text-blue-400 hover:bg-blue-50 hover:border-blue-500 cursor-pointer' : 'border-gray-200 text-gray-300'}`}>
+      className={`rounded-xl border-2 border-dashed text-center transition-colors flex flex-col items-center justify-center ${adminMode ? 'border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:border-blue-400 cursor-pointer' : 'border-white/10 text-white/20'}`}
+      style={{ backdropFilter: 'blur(4px)', background: 'rgba(255,255,255,0.03)', height: '110px' }}>
       {adminMode ? (
         <>
           <p className="text-2xl font-light leading-none mb-0.5">+</p>
@@ -544,9 +753,9 @@ function SectionColumn({ section, label, adminMode, capped, onSlotClick }: {
   return (
     <div>
       <div className="flex items-center gap-1 mb-2 justify-center">
-        <span className="text-gray-400 text-sm">×</span>
-        <h2 className="font-bold text-gray-700">{label ?? section.name}</h2>
-        <span className="text-xs text-gray-400">({section.attendees.length})</span>
+        <span className="text-white/40 text-sm">×</span>
+        <h2 className="font-bold text-white/80">{label ?? section.name}</h2>
+        <span className="text-xs text-white/40">({section.attendees.length})</span>
       </div>
       <div className="flex flex-col gap-2">
         {sorted.map((m) => (
@@ -600,125 +809,117 @@ export default function Home() {
 
   function zoneOf(name: string) { return zones.find((z) => z.name === name) }
 
-  function getSections(): { section: Section; label?: string; capped?: boolean }[] {
-    if (view === 'ทั้งหมด') {
-      const regular = ['TeamA', 'TeamB', 'TeamC'].flatMap((t) =>
-        (zoneOf(t)?.sections ?? []).filter((s) => !SPECIAL.includes(s.name)).map((s) => ({ section: s, capped: true }))
-      )
-      const special = SPECIAL.flatMap((sp) =>
-        zones.flatMap((z) => z.sections.filter((s) => s.name === sp).map((s) => ({ section: s })))
-      )
-      return [...regular, ...special]
-    }
-    if (view === 'ลา' || view === 'สำรอง') {
-      return zones.flatMap((z) => z.sections.filter((s) => s.name === view)).map((s) => ({ section: s }))
-    }
-    return (zoneOf(view)?.sections ?? []).filter((s) => !SPECIAL.includes(s.name)).map((s) => ({ section: s, capped: true }))
-  }
-
-  const rawSections = getSections()
-  const q = search.trim().toLowerCase()
-  const sections = q
-    ? rawSections.map(({ section, label, capped }) => ({
-        label, capped,
-        section: { ...section, attendees: section.attendees.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) },
-      })).filter(({ section }) => section.attendees.length > 0)
-    : rawSections
-
-  const allMembers = rawSections.flatMap((s) => s.section.attendees)
-  const laSection = zones.flatMap((z) => z.sections).find((s) => s.name === 'ลา')
-  const laCount = laSection?.attendees.length ?? 0
-  const maCount = allMembers.length - laCount
-
-  const TABS: ViewMode[] = ['TeamA', 'TeamB', 'TeamC', 'ลา', 'สำรอง', 'ทั้งหมด']
-  const TAB_COLOR: Partial<Record<ViewMode, string>> = { ลา: 'bg-red-500 text-white', สำรอง: 'bg-yellow-500 text-white' }
-  const TAB_INACTIVE: Partial<Record<ViewMode, string>> = { ลา: 'text-red-500 border border-red-300', สำรอง: 'text-yellow-600 border border-yellow-300' }
-  const colCount = Math.min(sections.length, 5)
-
   function openSlotModal(section: Section, type: 'add' | 'edit', member?: Attendee) {
     if (!adminMode) return
     if (type === 'edit' && member) {
-      setSlotModal({ type: 'edit', member, sectionId: section.id })
+      // collect attendees in the same section only
+      const teamAttendees = section.attendees
+      setSlotModal({ type: 'edit', member, sectionId: section.id, teamAttendees })
     } else {
       setSlotModal({ type: 'add', sectionId: section.id, sectionName: section.name })
     }
   }
 
+  const allSections = zones.flatMap((z) => z.sections)
+  const laCount = allSections.filter((s) => s.name === 'ลา').reduce((n, s) => n + s.attendees.length, 0)
+  const totalCount = allSections.reduce((n, s) => n + s.attendees.length, 0)
+  const maCount = totalCount - laCount
+
+  const TABS: ViewMode[] = ['TeamA', 'TeamB', 'TeamC', 'ลา', 'สำรอง', 'ทั้งหมด']
+  const TAB_ACTIVE: Partial<Record<ViewMode, string>> = { ลา: 'bg-red-500 text-white border-red-500', สำรอง: 'bg-yellow-500 text-white border-yellow-500' }
+  const TAB_INACTIVE: Partial<Record<ViewMode, string>> = { ลา: 'text-red-400 border-red-500/40', สำรอง: 'text-yellow-400 border-yellow-500/40' }
+
+  // Build sections for current view
+  const teamZones = view === 'ทั้งหมด'
+    ? (['TeamA', 'TeamB', 'TeamC'] as const).map((n) => zoneOf(n)).filter(Boolean) as Zone[]
+    : (view === 'ลา' || view === 'สำรอง') ? [] : [zoneOf(view)].filter(Boolean) as Zone[]
+
+  const specialSections = (view === 'ลา' || view === 'สำรอง')
+    ? zones.flatMap((z) => z.sections.filter((s) => s.name === view))
+    : view === 'ทั้งหมด'
+      ? [] // show inline within zone panels for all view
+      : []
+
+  const q = search.trim().toLowerCase()
+
   return (
-    <main className="min-h-screen bg-gray-100 px-4 py-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Tabs */}
-        <div className="flex gap-2 mb-4 items-center justify-center flex-wrap">
-          {TABS.map((t) => (
-            <button key={t} onClick={() => setView(t)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-1.5 ${view === t ? (TAB_COLOR[t] ?? 'bg-gray-800 text-white') : (TAB_INACTIVE[t] ?? 'bg-white text-gray-600 hover:bg-gray-200')}`}>
-              {t}
-              {t === 'ลา' && laCount > 0 && (
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full leading-none ${view === 'ลา' ? 'bg-white/30 text-white' : 'bg-red-500 text-white'}`}>{laCount}</span>
-              )}
-            </button>
-          ))}
+    <main className={`${view === 'ทั้งหมด' ? 'min-h-screen overflow-y-auto' : 'h-screen overflow-hidden'} px-3 py-3 relative`}
+      style={{
+        backgroundImage: 'url(/bg-dragon.png)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}>
+      <div className="fixed inset-0 bg-black/60 pointer-events-none" />
+
+      <div className={`${view === 'ทั้งหมด' ? 'flex flex-col gap-2' : 'h-full flex flex-col gap-2'} relative z-10`}>
+        {/* Top bar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Tabs */}
+          <div className="flex gap-1.5 flex-wrap">
+            {TABS.map((t) => (
+              <button key={t} onClick={() => setView(t)}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors backdrop-blur flex items-center gap-1 ${view === t ? (TAB_ACTIVE[t] ?? 'bg-white/20 text-white border-white/30') : (TAB_INACTIVE[t] ?? 'bg-black/30 text-gray-300 border-white/10 hover:bg-white/10')}`}>
+                {t}
+                {t === 'ลา' && laCount > 0 && <span className={`text-xs font-bold px-1 py-0 rounded-full leading-none ${view === 'ลา' ? 'bg-white/30' : 'bg-red-500 text-white'}`}>{laCount}</span>}
+              </button>
+            ))}
+          </div>
+          {/* Search */}
+          <div className="relative flex-1 max-w-xs">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="ค้นหาชื่อ หรือ UID..."
+              className="w-full bg-black/40 border border-white/20 rounded-full pl-7 pr-7 py-1 text-xs text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 backdrop-blur" />
+            {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs">✕</button>}
+          </div>
+          {/* Stats */}
+          <div className="flex gap-1 text-xs">
+            <span className="bg-green-900/40 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full">มา: {maCount}</span>
+            <span className="bg-red-900/40 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full">ลา: {laCount}</span>
+            <span className="bg-white/5 text-gray-300 border border-white/10 px-2 py-0.5 rounded-full">รวม: {totalCount}</span>
+          </div>
+          {/* Admin */}
           <button onClick={handleAdminToggle}
-            className={`ml-3 px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${adminMode ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-500 border-gray-300 hover:border-blue-400'}`}>
-            {adminMode ? '✎ Admin Mode' : '✎ แก้ไข'}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors backdrop-blur ${adminMode ? 'bg-blue-600 text-white border-blue-500' : 'bg-black/30 text-gray-300 border-white/20 hover:border-blue-400 hover:text-white'}`}>
+            {adminMode ? '✎ Admin' : '✎ แก้ไข'}
           </button>
         </div>
 
-        {adminMode && <p className="text-center text-blue-600 text-sm mb-2 font-medium">คลิกที่ card หรือช่องว่าง เพื่อเพิ่ม/แก้ไข</p>}
-
-        {/* Search */}
-        <div className="relative mb-4 max-w-sm mx-auto">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
-          <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="ค้นหาชื่อ หรือ UID..."
-            className="w-full bg-white border-2 border-gray-400 rounded-full pl-8 pr-9 py-1.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:border-blue-500 shadow-sm" />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm">✕</button>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl shadow p-5">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-5">
-            <h1 className="text-xl font-bold text-gray-800 tracking-wide">
-              {view === 'ทั้งหมด' ? 'ทั้งหมด' : view === 'ลา' || view === 'สำรอง' ? `${view} (ทุก Team)` : (zoneOf(view)?.label ?? view)}
-            </h1>
-            <div className="flex gap-2 text-sm">
-              <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full font-medium">มา: {maCount}</span>
-              <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full font-medium">ลา: {laCount}</span>
-              <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-full font-medium">รวม: {allMembers.length}</span>
-            </div>
-          </div>
-
-          {q && sections.length === 0 && (
-            <p className="text-center text-gray-400 py-8">ไม่พบ "{search}"</p>
-          )}
-
-          {view === 'ทั้งหมด' ? (
-            <div className="space-y-8">
-              {Array.from({ length: Math.ceil(sections.length / 5) }, (_, rowIdx) => {
-                const row = sections.slice(rowIdx * 5, rowIdx * 5 + 5)
+        {/* Content */}
+        {view === 'ทั้งหมด' ? (
+          <div className="flex flex-col gap-3">
+            {/* TeamA, TeamB, TeamC แนวตั้ง */}
+            {teamZones.map((zone) => (
+              <ZonePanel key={zone.id} zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal} compact />
+            ))}
+            {/* สำรอง + ลา แนวนอน */}
+            <div className="flex gap-2">
+              {(['สำรอง', 'ลา'] as const).map((label) => {
+                const secs = zones.flatMap((z) => z.sections.filter((s) => s.name === label))
                 return (
-                  <div key={rowIdx} className="grid grid-cols-5 gap-4">
-                    {row.map(({ section, label, capped }) => (
-                      <SectionColumn key={section.id} section={section} label={label} adminMode={adminMode} capped={capped}
-                        onSlotClick={(type, member) => openSlotModal(section, type, member)} />
-                    ))}
+                  <div key={label} className="flex-1 min-w-0">
+                    <SpecialZonePanel label={label} sections={secs} adminMode={adminMode} search={search} onSlotClick={openSlotModal} />
                   </div>
                 )
               })}
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <div className="grid gap-4 min-w-max" style={{ gridTemplateColumns: `repeat(${colCount}, minmax(160px, 1fr))` }}>
-                {sections.map(({ section, label, capped }) => (
-                  <SectionColumn key={section.id} section={section} label={label} adminMode={adminMode} capped={capped}
-                    onSlotClick={(type, member) => openSlotModal(section, type, member)} />
-                ))}
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 flex gap-2">
+            {/* Team zones */}
+            {teamZones.map((zone) => (
+              <div key={zone.id} className="flex-1 min-w-0 overflow-y-auto">
+                <ZonePanel zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal} />
               </div>
-            </div>
-          )}
-        </div>
+            ))}
+            {/* Special view (ลา / สำรอง) */}
+            {specialSections.length > 0 && (
+              <div className="flex-1 min-w-0 overflow-y-auto">
+                <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode} search={search} onSlotClick={openSlotModal} />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Slot Modal */}
@@ -728,17 +929,18 @@ export default function Home() {
 
       {/* Password Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <form onSubmit={handlePasswordSubmit} className="bg-white rounded-2xl shadow-xl p-6 w-80">
-            <h2 className="text-lg font-bold text-gray-800 mb-1">เข้าสู่ Admin Mode</h2>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <form onSubmit={handlePasswordSubmit} className="rounded-2xl shadow-xl p-6 w-80"
+            style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)', border: '1px solid rgba(255,255,255,0.15)' }}>
+            <h2 className="text-lg font-bold text-white mb-1">เข้าสู่ Admin Mode</h2>
             <p className="text-sm text-gray-400 mb-4">ใส่รหัสผ่านเพื่อแก้ไขข้อมูล</p>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus
               placeholder="รหัสผ่าน"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 mb-2" />
-            {pwError && <p className="text-red-500 text-xs mb-2">{pwError}</p>}
+              className="w-full border border-white/20 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 mb-2 text-white placeholder-gray-500 bg-black/30" />
+            {pwError && <p className="text-red-400 text-xs mb-2">{pwError}</p>}
             <div className="flex gap-2 mt-1">
               <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 text-sm font-medium transition-colors">เข้าสู่ระบบ</button>
-              <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg py-2 text-sm transition-colors">ยกเลิก</button>
+              <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg py-2 text-sm transition-colors">ยกเลิก</button>
             </div>
           </form>
         </div>
