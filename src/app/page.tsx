@@ -324,10 +324,13 @@ function SlotModal({ state, onClose, onRefresh }: {
             {/* Current skills */}
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Skill ที่มี ({memberSkills.length})</p>
-              <label className={`cursor-pointer text-xs px-3 py-1 rounded-full font-medium transition-colors ${uploading ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
-                {uploading ? 'กำลังอัปโหลด...' : '+ อัปโหลดรูป'}
-                <input ref={editFileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUploadForEdit} disabled={uploading} />
-              </label>
+              <div className="flex flex-col items-end gap-1">
+                <label className={`cursor-pointer text-xs px-3 py-1 rounded-full font-medium transition-colors ${uploading ? 'bg-gray-100 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+                  {uploading ? 'กำลังอัปโหลด...' : '+ อัปโหลดรูป'}
+                  <input ref={editFileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUploadForEdit} disabled={uploading} />
+                </label>
+                <p className="text-xs text-yellow-400/80">⚠ อัปรูปสกิลเท่านั้นนะ อย่าไปเอารูปใครมาอัป</p>
+              </div>
             </div>
             {memberSkills.length > 0 && (
               <div className="flex gap-2 flex-wrap mb-3 p-2 bg-green-50 rounded-xl border border-green-200">
@@ -495,10 +498,13 @@ function SlotModal({ state, onClose, onRefresh }: {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Skill</label>
-              <label className={`cursor-pointer text-xs px-3 py-1 rounded-full font-medium transition-colors ${uploading ? 'bg-white/10 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
-                {uploading ? 'กำลังอัปโหลด...' : '+ อัปโหลดรูป'}
-                <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
-              </label>
+              <div className="flex flex-col items-end gap-1">
+                <label className={`cursor-pointer text-xs px-3 py-1 rounded-full font-medium transition-colors ${uploading ? 'bg-white/10 text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-500'}`}>
+                  {uploading ? 'กำลังอัปโหลด...' : '+ อัปโหลดรูป'}
+                  <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} disabled={uploading} />
+                </label>
+                <p className="text-xs text-yellow-400/80">⚠ อัปรูปสกิลเท่านั้นนะ อย่าไปเอารูปใครมาอัป</p>
+              </div>
             </div>
             {allSkills.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto bg-black/20 rounded-xl p-2">
