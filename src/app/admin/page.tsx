@@ -7,15 +7,13 @@ type Skill = { id: number; imagePath: string }
 type Attendee = { uid: string; memberName: string; job: string; sectionId: number | null; skills: Skill[]; tags: string[] }
 
 const ALL_TAGS = ['อาวุธเทพ', 'หัวหน้าทีม']
-type Section = { id: number; name: string }
-type Zone = { id: number; name: string; label: string; sections: Section[] }
 
 const JOBS = ['IRONCRAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE']
 
 function AdminContent() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [attendees, setAttendees] = useState<Attendee[]>([])
-  const [zones, setZones] = useState<Zone[]>([])
+
   const [editingUid, setEditingUid] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ memberName: '', job: '' })
   const [selectedMember, setSelectedMember] = useState<Attendee | null>(null)
@@ -42,13 +40,7 @@ function AdminContent() {
     setAttendees(data.attendees)
   }
 
-  async function loadZones() {
-    const res = await fetch('/api/zones')
-    const data = await res.json()
-    setZones(data.zones)
-  }
-
-  useEffect(() => { loadSkills(); loadAttendees(); loadZones() }, [])
+  useEffect(() => { loadSkills(); loadAttendees() }, [])
 
   async function handleEdit(a: Attendee) {
     setEditingUid(a.uid)
@@ -211,29 +203,6 @@ function AdminContent() {
                           className="text-gray-500 hover:text-yellow-400 px-1 transition-colors text-xs shrink-0">✎</button>
                         <button onClick={() => handleDelete(a.uid, a.memberName)} title="ลบ"
                           className="text-gray-500 hover:text-red-400 px-1 transition-colors text-xs shrink-0">✕</button>
-                      </div>
-                      <div className="px-3 pb-2 pt-1">
-                        <select
-                          value={a.sectionId ?? ''}
-                          onChange={async (e) => {
-                            const sectionId = e.target.value ? Number(e.target.value) : null
-                            await fetch(`/api/attendees/${a.uid}/section`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ sectionId }),
-                            })
-                            setAttendees((prev) => prev.map((m) => m.uid === a.uid ? { ...m, sectionId } : m))
-                            flash(`${a.memberName} → ${e.target.options[e.target.selectedIndex].text}`)
-                          }}
-                          className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded px-2 py-1 text-xs focus:outline-none"
-                        >
-                          <option value="">— ไม่ระบุ section —</option>
-                          {zones.map((z) => (
-                            <optgroup key={z.id} label={z.name}>
-                              {z.sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </optgroup>
-                          ))}
-                        </select>
                       </div>
                     </>
                   )}

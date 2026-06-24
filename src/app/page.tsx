@@ -713,8 +713,8 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
   const g = parseInt(color.slice(3, 5), 16)
   const b = parseInt(color.slice(5, 7), 16)
 
-  const visibleSkills = member.skills.slice(0, 5)
-  const hiddenSkills = member.skills.slice(5)
+  const visibleSkills = member.skills.slice(0, 6)
+  const hiddenSkills = member.skills.slice(6)
 
   return (
     <div
@@ -741,35 +741,37 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
           style={{ width: 68, height: 68, opacity: 0.15, filter: 'saturate(0.5)' }} />
       )}
 
-      {adminMode && <div className="absolute top-1.5 left-1.5 text-white/25 text-xs z-10">✎</div>}
+      {adminMode && <div className="absolute top-1.5 right-1.5 text-white/25 text-xs z-10">✎</div>}
 
-      {/* All content right-aligned */}
-      <div className="relative z-10 pr-3 pl-3 pt-2 pb-2 text-right h-full flex flex-col justify-between overflow-hidden">
+      {/* Layout: center (name+job) | right (skills) */}
+      <div className="relative z-10 px-3 py-2 h-full flex items-center gap-2 overflow-hidden">
 
-        {/* Name */}
-        <div className="flex items-center justify-end gap-1 mb-0.5">
-          {isLeader && <span className="text-yellow-400 text-xs">👑</span>}
-          <p className="font-bold leading-tight truncate" style={{ color: '#c9a84c', fontSize: '0.85rem' }}>{member.memberName}</p>
+        {/* Center: name + job */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-0.5 min-w-0">
+          <div className="flex items-center gap-1">
+            {isLeader && <span className="text-yellow-400 text-xs">👑</span>}
+            <p className="font-bold leading-tight truncate text-center" style={{ color: '#c9a84c', fontSize: '0.85rem' }}>{member.memberName}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <p className="text-xs font-black uppercase tracking-widest" style={{ color }}>{member.job}</p>
+            {JOB_ICON[member.job] && (
+              <img src={JOB_ICON[member.job]} alt={member.job} width={13} height={13} className="object-contain" />
+            )}
+          </div>
         </div>
 
-        {/* Job + icon */}
-        <div className="flex items-center justify-end gap-1 mb-1.5">
-          <p className="text-xs font-black uppercase tracking-widest" style={{ color }}>{member.job}</p>
-          {JOB_ICON[member.job] && (
-            <img src={JOB_ICON[member.job]} alt={member.job} width={14} height={14} className="object-contain" />
-          )}
-        </div>
-
-        {/* Skills (max 5 + click modal) */}
+        {/* Right: skills grid 2×3 + overflow badge */}
         {member.skills.length > 0 && (
-          <div className="flex justify-end gap-1 mb-1.5 items-center">
-            {visibleSkills.map((s) => (
-              <Image key={s.id} src={s.imagePath} alt="skill" width={22} height={22} className="rounded-full object-cover" />
-            ))}
+          <div className="flex items-center gap-1 shrink-0">
+            <div className="grid grid-cols-2 gap-1 shrink-0" style={{ width: 54 }}>
+              {visibleSkills.map((s) => (
+                <Image key={s.id} src={s.imagePath} alt="skill" width={25} height={25} className="rounded-full object-cover w-full h-auto aspect-square" />
+              ))}
+            </div>
             {hiddenSkills.length > 0 && (
               <button
                 onClick={(e) => { e.stopPropagation(); setShowSkillTooltip(true) }}
-                className="w-6 h-6 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white text-xs font-bold hover:bg-white/30 transition-colors">
+                className="w-7 h-7 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white text-xs font-bold hover:bg-white/30 transition-colors shrink-0">
                 +{hiddenSkills.length}
               </button>
             )}
@@ -798,8 +800,6 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
           document.body
         )}
 
-        {/* UID */}
-        <p className="text-white/30 text-xs">UID: {member.uid}</p>
       </div>
     </div>
   )
