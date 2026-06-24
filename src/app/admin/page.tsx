@@ -10,7 +10,7 @@ const ALL_TAGS = ['อาวุธเทพ', 'หัวหน้าทีม']
 type Section = { id: number; name: string }
 type Zone = { id: number; name: string; label: string; sections: Section[] }
 
-const JOBS = ['Ironclad', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'Dragonsvelte']
+const JOBS = ['IRONCRAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE']
 
 export default function AdminPage() {
   const [skills, setSkills] = useState<Skill[]>([])
