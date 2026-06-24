@@ -7,7 +7,7 @@ import Image from 'next/image'
 type Skill = { id: number; imagePath: string }
 type Attendee = {
   uid: string; memberName: string; job: string
-  sectionId: number | null; attendance: string | null; skills: Skill[]; tags: string[]
+  sectionId: number | null; position: number | null; attendance: string | null; skills: Skill[]; tags: string[]
 }
 type Section = { id: number; name: string; attendees: Attendee[] }
 type Zone = { id: number; name: string; label: string; sections: Section[] }
@@ -582,11 +582,12 @@ function CompactEmptySlot({ adminMode, onClick }: { adminMode: boolean; onClick:
 }
 
 // ─── Zone Panel (shows all sections of a zone) ────────────────────────────────
-function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDragStart, onDropSection, dragOverSectionId, setDragOverSectionId }: {
+function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId }: {
   zone: Zone; adminMode: boolean; search: string; compact?: boolean
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
-  onDragStart?: (uid: string) => void
-  onDropSection?: (sectionId: number) => void
+  onDragStart?: (uid: string, sectionId: number, position: number) => void
+  onDropSection?: (sectionId: number, position: number) => void
+  onSwap?: (targetUid: string, targetSectionId: number, targetPosition: number) => void
   dragOverSectionId?: number | null
   setDragOverSectionId?: (id: number | null) => void
 }) {
@@ -601,24 +602,50 @@ function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDr
       </div>
       <div className={`flex gap-2 ${compact ? '' : 'flex-1 min-h-0'}`}>
         {sections.map((sec) => {
-          const sorted = [...sec.attendees].sort((a, b) => (a.tags?.includes('หัวหน้าทีม') ? 0 : 1) - (b.tags?.includes('หัวหน้าทีม') ? 0 : 1))
-          const filtered = q ? sorted.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) : sorted
-          const emptyCount = Math.max(0, CAPACITY - sorted.length)
-          const isOver = dragOverSectionId === sec.id
+          // build slot map: slot index 0..CAPACITY-1 → member
+          const slotMap = new Map<number, Attendee>()
+          const unpositioned: Attendee[] = []
+          for (const m of sec.attendees) {
+            if (m.position !== null && m.position !== undefined) slotMap.set(m.position, m)
+            else unpositioned.push(m)
+          }
+          let nextFree = 0
+          for (const m of unpositioned) {
+            while (slotMap.has(nextFree)) nextFree++
+            slotMap.set(nextFree, m)
+            nextFree++
+          }
+
           return (
             <div key={sec.id}
-              className={`flex-1 flex flex-col gap-1.5 min-w-0 rounded-lg transition-colors ${compact ? '' : 'overflow-y-auto'} ${isOver && adminMode ? 'bg-blue-500/15 ring-2 ring-blue-400/50' : ''}`}
-              onDragOver={adminMode ? (e) => { e.preventDefault(); setDragOverSectionId?.(sec.id) } : undefined}
-              onDragLeave={adminMode ? () => setDragOverSectionId?.(null) : undefined}
-              onDrop={adminMode ? (e) => { e.preventDefault(); setDragOverSectionId?.(null); onDropSection?.(sec.id) } : undefined}>
+              className={`flex-1 flex flex-col gap-1.5 min-w-0 rounded-lg transition-colors ${compact ? '' : 'overflow-y-auto'}`}>
               <p className="text-center text-white/40 text-xs font-medium shrink-0">× {sec.name} <span className="text-white/25">({sec.attendees.length})</span></p>
-              {filtered.map((m) => (
-                <MemberCard key={m.uid} member={m} adminMode={adminMode} compact={compact}
-                  onClick={() => onSlotClick(sec, 'edit', m)} onDragStart={onDragStart} />
-              ))}
-              {!q && Array.from({ length: emptyCount }, (_, i) => (
-                <EmptySlot key={i} adminMode={adminMode} onClick={() => onSlotClick(sec, 'add')} />
-              ))}
+              {q ? (
+                // search mode: just show filtered members
+                sec.attendees
+                  .filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q))
+                  .map((m) => (
+                    <MemberCard key={m.uid} member={m} adminMode={adminMode} compact={compact}
+                      onClick={() => onSlotClick(sec, 'edit', m)}
+                      onDragStart={(uid) => onDragStart?.(uid, sec.id, m.position ?? 0)}
+                      onDropOnMember={(targetUid) => onSwap?.(targetUid, sec.id, m.position ?? 0)} />
+                  ))
+              ) : (
+                // normal mode: CAPACITY fixed slots
+                Array.from({ length: CAPACITY }, (_, slotIdx) => {
+                  const m = slotMap.get(slotIdx)
+                  return m ? (
+                    <MemberCard key={m.uid} member={m} adminMode={adminMode} compact={compact}
+                      onClick={() => onSlotClick(sec, 'edit', m)}
+                      onDragStart={(uid) => onDragStart?.(uid, sec.id, slotIdx)}
+                      onDropOnMember={(targetUid) => onSwap?.(targetUid, sec.id, slotIdx)} />
+                  ) : (
+                    <EmptySlot key={`empty-${slotIdx}`} adminMode={adminMode}
+                      onClick={() => onSlotClick(sec, 'add')}
+                      onDrop={() => onDropSection?.(sec.id, slotIdx)} />
+                  )
+                })
+              )}
             </div>
           )
         })}
@@ -628,19 +655,19 @@ function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDr
 }
 
 // ─── Special Zone Panel (ลา / สำรอง) ─────────────────────────────────────────
-function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick, onDragStart, onDropSection, dragOverSectionId, setDragOverSectionId }: {
+function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId }: {
   label: string; sections: Section[]; adminMode: boolean; search: string
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
-  onDragStart?: (uid: string) => void
-  onDropSection?: (sectionId: number) => void
+  onDragStart?: (uid: string, sectionId: number, position: number) => void
+  onDropSection?: (sectionId: number, position: number) => void
+  onSwap?: (targetUid: string, targetSectionId: number, targetPosition: number) => void
   dragOverSectionId?: number | null
   setDragOverSectionId?: (id: number | null) => void
 }) {
   const q = search.trim().toLowerCase()
-  const allMembers = sections.flatMap((s) => {
-    const sorted = [...s.attendees].sort((a, b) => (a.tags?.includes('หัวหน้าทีม') ? 0 : 1) - (b.tags?.includes('หัวหน้าทีม') ? 0 : 1))
-    return q ? sorted.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) : sorted
-  })
+  const allMembers = sections.flatMap((s) =>
+    q ? s.attendees.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) : s.attendees
+  )
   const sec = sections[0]
   const isOver = sec && dragOverSectionId === sec.id
   return (
@@ -653,11 +680,16 @@ function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick, onD
       <div className={`flex-1 overflow-y-auto flex flex-col gap-1.5 rounded-lg transition-colors ${isOver && adminMode ? 'bg-blue-500/15 ring-2 ring-blue-400/50' : ''}`}
         onDragOver={adminMode && sec ? (e) => { e.preventDefault(); setDragOverSectionId?.(sec.id) } : undefined}
         onDragLeave={adminMode ? () => setDragOverSectionId?.(null) : undefined}
-        onDrop={adminMode && sec ? (e) => { e.preventDefault(); setDragOverSectionId?.(null); onDropSection?.(sec.id) } : undefined}>
-        {allMembers.map((m) => (
-          <MemberCard key={m.uid} member={m} adminMode={adminMode}
-            onClick={() => sec && onSlotClick(sec, 'edit', m)} onDragStart={onDragStart} />
-        ))}
+        onDrop={adminMode && sec ? (e) => { e.preventDefault(); setDragOverSectionId?.(null); onDropSection?.(sec.id, allMembers.length) } : undefined}>
+        {allMembers.map((m, idx) => {
+          const mSec = sections.find((s) => s.attendees.some((a) => a.uid === m.uid))
+          return (
+            <MemberCard key={m.uid} member={m} adminMode={adminMode}
+              onClick={() => sec && onSlotClick(sec, 'edit', m)}
+              onDragStart={(uid) => onDragStart?.(uid, mSec?.id ?? sec?.id ?? 0, m.position ?? idx)}
+              onDropOnMember={(targetUid) => mSec && onSwap?.(targetUid, mSec.id, m.position ?? idx)} />
+          )
+        })}
         {allMembers.length === 0 && <p className="text-white/20 text-xs text-center py-4">ไม่มี</p>}
         {adminMode && sec && <EmptySlot adminMode={adminMode} onClick={() => onSlotClick(sec, 'add')} />}
       </div>
@@ -666,11 +698,14 @@ function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick, onD
 }
 
 // ─── Member Card ──────────────────────────────────────────────────────────────
-function MemberCard({ member, adminMode, onClick, compact = false, onDragStart }: {
+function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, onDropOnMember }: {
   member: Attendee; adminMode: boolean; onClick: () => void; compact?: boolean
   onDragStart?: (uid: string) => void
+  onDropOnMember?: (targetUid: string) => void
+  // position handled by parent
 }) {
   const [showSkillTooltip, setShowSkillTooltip] = useState(false)
+  const [isDragOver, setIsDragOver] = useState(false)
   const isLeader = member.tags?.includes('หัวหน้าทีม')
   const color = jobColor(member.job)
   const borderColor = color
@@ -685,8 +720,11 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart }
     <div
       draggable={adminMode}
       onDragStart={adminMode ? (e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(member.uid) } : undefined}
+      onDragOver={adminMode ? (e) => { e.preventDefault(); setIsDragOver(true) } : undefined}
+      onDragLeave={adminMode ? () => setIsDragOver(false) : undefined}
+      onDrop={adminMode ? (e) => { e.preventDefault(); setIsDragOver(false); onDropOnMember?.(member.uid) } : undefined}
       onClick={adminMode ? onClick : undefined}
-      className={`relative rounded-xl overflow-hidden transition-all ${adminMode ? 'cursor-grab active:cursor-grabbing hover:brightness-110' : ''}`}
+      className={`relative rounded-xl overflow-hidden transition-all ${adminMode ? 'cursor-grab active:cursor-grabbing hover:brightness-110' : ''} ${isDragOver ? 'ring-2 ring-yellow-400 brightness-125' : ''}`}
       style={{
         borderWidth: 2,
         borderStyle: 'solid',
@@ -768,16 +806,26 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart }
 }
 
 // ─── Empty Slot ───────────────────────────────────────────────────────────────
-function EmptySlot({ adminMode, onClick }: { adminMode: boolean; onClick: () => void }) {
+function EmptySlot({ adminMode, onClick, onDrop }: { adminMode: boolean; onClick: () => void; onDrop?: () => void }) {
+  const [isDragOver, setIsDragOver] = useState(false)
   return (
     <div
       onClick={adminMode ? onClick : undefined}
-      className={`rounded-xl border-2 border-dashed text-center transition-colors flex flex-col items-center justify-center ${adminMode ? 'border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:border-blue-400 cursor-pointer' : 'border-white/10 text-white/20'}`}
-      style={{ backdropFilter: 'blur(4px)', background: 'rgba(255,255,255,0.03)', height: '110px' }}>
+      onDragOver={adminMode ? (e) => { e.preventDefault(); setIsDragOver(true) } : undefined}
+      onDragLeave={adminMode ? () => setIsDragOver(false) : undefined}
+      onDrop={adminMode ? (e) => { e.preventDefault(); setIsDragOver(false); onDrop?.() } : undefined}
+      className={`rounded-xl border-2 border-dashed text-center transition-all flex flex-col items-center justify-center ${
+        isDragOver && adminMode
+          ? 'border-yellow-400 bg-yellow-400/15 scale-[1.02]'
+          : adminMode
+            ? 'border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:border-blue-400 cursor-pointer'
+            : 'border-white/10 text-white/20'
+      }`}
+      style={{ backdropFilter: 'blur(4px)', background: isDragOver ? undefined : 'rgba(255,255,255,0.03)', height: '110px' }}>
       {adminMode ? (
         <>
-          <p className="text-2xl font-light leading-none mb-0.5">+</p>
-          <p className="text-xs font-semibold tracking-wide">ADD</p>
+          <p className="text-2xl font-light leading-none mb-0.5">{isDragOver ? '↓' : '+'}</p>
+          <p className="text-xs font-semibold tracking-wide">{isDragOver ? 'วางที่นี่' : 'ADD'}</p>
         </>
       ) : (
         <p className="text-xs">ว่าง</p>
@@ -791,11 +839,7 @@ function SectionColumn({ section, label, adminMode, capped, onSlotClick }: {
   section: Section; label?: string; adminMode: boolean; capped?: boolean
   onSlotClick: (type: 'add' | 'edit', member?: Attendee) => void
 }) {
-  const sorted = [...section.attendees].sort((a, b) => {
-    const aL = a.tags?.includes('หัวหน้าทีม') ? 0 : 1
-    const bL = b.tags?.includes('หัวหน้าทีม') ? 0 : 1
-    return aL - bL
-  })
+  const sorted = section.attendees
   const emptyCount = capped ? Math.max(0, CAPACITY - sorted.length) : 0
 
   return (
@@ -832,16 +876,32 @@ export default function Home() {
   const [pwError, setPwError] = useState('')
   const [search, setSearch] = useState('')
   const [slotModal, setSlotModal] = useState<ModalState | null>(null)
-  const [draggedUid, setDraggedUid] = useState<string | null>(null)
+  const [dragged, setDragged] = useState<{ uid: string; sectionId: number | null; position: number | null } | null>(null)
   const [dragOverSectionId, setDragOverSectionId] = useState<number | null>(null)
 
-  async function handleDrop(sectionId: number) {
-    if (!draggedUid) return
-    await fetch(`/api/attendees/${draggedUid}/section`, {
+  async function handleDrop(targetSectionId: number, position?: number) {
+    if (!dragged) return
+    await fetch(`/api/attendees/${dragged.uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sectionId }),
+      body: JSON.stringify({ sectionId: targetSectionId, position: position ?? null }),
     })
-    setDraggedUid(null)
+    setDragged(null)
+    load()
+  }
+
+  async function handleSwap(targetUid: string, targetSectionId: number, targetPosition: number | null) {
+    if (!dragged || dragged.uid === targetUid) return
+    await Promise.all([
+      fetch(`/api/attendees/${dragged.uid}/section`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectionId: targetSectionId, position: targetPosition }),
+      }),
+      fetch(`/api/attendees/${targetUid}/section`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectionId: dragged.sectionId, position: dragged.position }),
+      }),
+    ])
+    setDragged(null)
     load()
   }
 
@@ -951,7 +1011,7 @@ export default function Home() {
             {/* TeamA, TeamB, TeamC แนวตั้ง */}
             {teamZones.map((zone) => (
               <ZonePanel key={zone.id} zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal} compact
-                onDragStart={setDraggedUid} onDropSection={handleDrop}
+                onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                 dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
             ))}
             {/* สำรอง + ลา แนวนอน */}
@@ -961,7 +1021,7 @@ export default function Home() {
                 return (
                   <div key={label} className="flex-1 min-w-0">
                     <SpecialZonePanel label={label} sections={secs} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
-                      onDragStart={setDraggedUid} onDropSection={handleDrop}
+                      onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                       dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
                   </div>
                 )
@@ -974,7 +1034,7 @@ export default function Home() {
             {teamZones.map((zone) => (
               <div key={zone.id} className="flex-1 min-w-0 overflow-y-auto">
                 <ZonePanel zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
-                  onDragStart={setDraggedUid} onDropSection={handleDrop}
+                  onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                   dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
               </div>
             ))}
@@ -982,7 +1042,7 @@ export default function Home() {
             {specialSections.length > 0 && (
               <div className="flex-1 min-w-0 overflow-y-auto">
                 <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
-                  onDragStart={setDraggedUid} onDropSection={handleDrop}
+                  onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                   dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
               </div>
             )}

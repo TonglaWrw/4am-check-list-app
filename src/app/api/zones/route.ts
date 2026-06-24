@@ -10,7 +10,7 @@ export async function GET() {
         include: {
           attendees: {
             include: { skills: { include: { skill: true } } },
-            orderBy: { memberName: 'asc' },
+            orderBy: [{ position: 'asc' }, { memberName: 'asc' }],
           },
         },
       },
