@@ -280,8 +280,8 @@ export default function AdminPage() {
                     <p className="text-xs text-gray-400 mb-2">Skill ที่ assign แล้ว ({memberSkills.length})</p>
                     <div className="flex flex-wrap gap-2">
                       {memberSkills.map((s) => (
-                        <div key={s.id} className="relative group">
-                          <Image src={s.imagePath} alt="skill icon" width={44} height={44} className="rounded-full object-cover border-2 border-green-500" />
+                        <div key={s.id} className="relative group w-10 h-10 shrink-0">
+                          <Image src={s.imagePath} alt="skill icon" width={40} height={40} className="w-10 h-10 rounded-full object-cover border-2 border-green-500" />
                           <button onClick={() => toggleSkill(s)}
                             className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 rounded-full text-white text-xs hidden group-hover:flex items-center justify-center leading-none">
                             ✕
@@ -297,16 +297,16 @@ export default function AdminPage() {
                 {skills.length === 0 ? (
                   <p className="text-gray-500 text-sm">ยังไม่มีรูป skill — อัปโหลดได้เลย</p>
                 ) : (
-                  <div className="grid grid-cols-8 gap-2 max-h-64 overflow-y-auto">
+                  <div className="flex flex-wrap gap-2 max-h-64 overflow-y-auto">
                     {skills.map((s) => {
                       const has = memberSkills.some((ms) => ms.id === s.id)
                       return (
-                        <div key={s.id} className="relative group">
+                        <div key={s.id} className="relative group w-10 h-10 shrink-0">
                           <button onClick={() => toggleSkill(s)}
-                            className={`w-full rounded-lg overflow-hidden border-2 transition-colors ${
+                            className={`w-10 h-10 rounded-lg overflow-hidden border-2 transition-colors ${
                               has ? 'border-green-500' : 'border-transparent hover:border-gray-500'
                             }`}>
-                            <Image src={s.imagePath} alt="skill icon" width={48} height={48} className="object-cover w-full h-full" />
+                            <Image src={s.imagePath} alt="skill icon" width={40} height={40} className="object-cover w-full h-full" />
                             {has && (
                               <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
                                 <span className="text-green-400 text-lg font-bold">✓</span>

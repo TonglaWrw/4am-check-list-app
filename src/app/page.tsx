@@ -12,19 +12,19 @@ type Attendee = {
 type Section = { id: number; name: string; attendees: Attendee[] }
 type Zone = { id: number; name: string; label: string; sections: Section[] }
 
-const JOBS = ['Ironclad', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'Dragonsvelte']
+const JOBS = ['IRONCRAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE']
 const JOB_COLOR: Record<string, string> = {
-  Ironclad: '#f59e0b', BLOODSTORM: '#ef4444', CELESTUNE: '#3b82f6',
-  NIGHTWAKER: '#06b6d4', NUMINA: '#a855f7', SYLPH: '#ec4899', Dragonsvelte: '#22c55e',
+  IRONCRAD: '#f59e0b', BLOODSTORM: '#ef4444', CELESTUNE: '#3b82f6',
+  NIGHTWAKER: '#06b6d4', NUMINA: '#a855f7', SYLPH: '#ec4899', DRAGONSVELTE: '#22c55e',
 }
 const JOB_ICON: Record<string, string> = {
-  Ironclad: 'https://cdn.discordapp.com/emojis/1497898275871789166.png',
+  IRONCRAD: 'https://cdn.discordapp.com/emojis/1497898275871789166.png',
   SYLPH: 'https://cdn.discordapp.com/emojis/1497905719146709185.png',
   NUMINA: 'https://cdn.discordapp.com/emojis/1489512270202535987.png',
   BLOODSTORM: 'https://cdn.discordapp.com/emojis/1489501000652820510.png',
   NIGHTWAKER: 'https://cdn.discordapp.com/emojis/1497905458139107429.png',
   CELESTUNE: 'https://cdn.discordapp.com/emojis/1489508116403060846.png',
-  Dragonsvelte: 'https://cdn.discordapp.com/emojis/1489508543307583488.png',
+  DRAGONSVELTE: 'https://cdn.discordapp.com/emojis/1489508543307583488.png',
 }
 function jobColor(job: string) { return JOB_COLOR[job] ?? '#6b7280' }
 const SPECIAL = ['ลา', 'สำรอง']
@@ -58,6 +58,7 @@ function SlotModal({ state, onClose, onRefresh }: {
   const [allAttendees, setAllAttendees] = useState<Attendee[]>([])
   const [allSkills, setAllSkills] = useState<Skill[]>([])
   const [query, setQuery] = useState('')
+  const [jobFilter, setJobFilter] = useState<string | null>(null)
   // new member form
   const [form, setForm] = useState({ uid: '', memberName: '', job: JOBS[0] })
   const [newTags, setNewTags] = useState<string[]>([])
@@ -86,6 +87,7 @@ function SlotModal({ state, onClose, onRefresh }: {
   const unassigned = allAttendees
     .filter((a) => a.sectionId === null)
     .filter((a) => a.memberName.toLowerCase().includes(query.toLowerCase()) || a.uid.includes(query))
+    .filter((a) => !jobFilter || a.job === jobFilter)
 
   async function assignExisting(uid: string) {
     await fetch(`/api/attendees/${uid}/section`, {
@@ -311,7 +313,7 @@ function SlotModal({ state, onClose, onRefresh }: {
             className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${editTab === 'skills' ? 'bg-white/20 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
             Skill
           </button>
-          <button onClick={() => { setEditTab('swap'); setQuery('') }}
+          <button onClick={() => { setEditTab('swap'); setQuery(''); setJobFilter(null) }}
             className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors ${editTab === 'swap' ? 'bg-white/20 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}>
             เปลี่ยนคน
           </button>
@@ -330,8 +332,8 @@ function SlotModal({ state, onClose, onRefresh }: {
             {memberSkills.length > 0 && (
               <div className="flex gap-2 flex-wrap mb-3 p-2 bg-green-50 rounded-xl border border-green-200">
                 {memberSkills.map((s) => (
-                  <div key={s.id} className="relative group">
-                    <Image src={s.imagePath} alt="skill" width={40} height={40} className="rounded-full border-2 border-green-400 object-cover" />
+                  <div key={s.id} className="relative group w-10 h-10 shrink-0">
+                    <Image src={s.imagePath} alt="skill" width={40} height={40} className="w-10 h-10 rounded-full border-2 border-green-400 object-cover" />
                     <button onClick={() => toggleMemberSkill(s)}
                       className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-xs hidden group-hover:flex items-center justify-center leading-none">✕</button>
                   </div>
@@ -342,12 +344,12 @@ function SlotModal({ state, onClose, onRefresh }: {
             {allSkills.length === 0
               ? <p className="text-gray-400 text-sm text-center py-4">ยังไม่มีรูป skill</p>
               : (
-                <div className="grid grid-cols-8 gap-1.5 max-h-40 overflow-y-auto bg-black/20 rounded-xl p-2">
+                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto bg-black/20 rounded-xl p-2">
                   {allSkills.map((s) => {
                     const has = memberSkills.some((ms) => ms.id === s.id)
                     return (
                       <button key={s.id} type="button" onClick={() => toggleMemberSkill(s)}
-                        className={`rounded-lg overflow-hidden border-2 transition-colors aspect-square ${has ? 'border-green-500 ring-2 ring-green-200' : 'border-transparent hover:border-gray-300'}`}>
+                        className={`w-10 h-10 shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${has ? 'border-green-500 ring-2 ring-green-200' : 'border-transparent hover:border-gray-300'}`}>
                         <Image src={s.imagePath} alt="skill" width={40} height={40} className="object-cover w-full h-full" />
                       </button>
                     )
@@ -363,7 +365,17 @@ function SlotModal({ state, onClose, onRefresh }: {
             <p className="text-xs text-gray-400 mb-3">เลือกสมาชิกใหม่เพื่อสลับกับ <span className="font-semibold text-white">{m.memberName}</span></p>
             <input value={query} onChange={(e) => setQuery(e.target.value)}
               placeholder="ค้นหาชื่อหรือ UID..."
-              className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-blue-400 text-white placeholder-gray-500 bg-black/30" />
+              className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm mb-2 focus:outline-none focus:border-blue-400 text-white placeholder-gray-500 bg-black/30" />
+            <div className="flex flex-wrap gap-1 mb-3">
+              {JOBS.map((j) => (
+                <button key={j} type="button" onClick={() => setJobFilter(jobFilter === j ? null : j)}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${jobFilter === j ? 'text-white border-transparent' : 'bg-transparent border-white/20 text-gray-400 hover:border-white/40 hover:text-white'}`}
+                  style={jobFilter === j ? { background: jobColor(j), borderColor: jobColor(j) } : {}}>
+                  {JOB_ICON[j] && <img src={JOB_ICON[j]} alt={j} width={12} height={12} className="object-contain" />}
+                  {j}
+                </button>
+              ))}
+            </div>
             {unassigned.length === 0
               ? <p className="text-gray-400 text-sm text-center py-4">ไม่มีสมาชิกที่ยังไม่ได้ assign</p>
               : (
@@ -421,7 +433,17 @@ function SlotModal({ state, onClose, onRefresh }: {
         <div>
           <input value={query} onChange={(e) => setQuery(e.target.value)}
             placeholder="ค้นหาชื่อหรือ UID..."
-            className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm mb-3 focus:outline-none focus:border-blue-400 text-white placeholder-gray-500 bg-black/30" />
+            className="w-full border border-white/20 rounded-xl px-3 py-2 text-sm mb-2 focus:outline-none focus:border-blue-400 text-white placeholder-gray-500 bg-black/30" />
+          <div className="flex flex-wrap gap-1 mb-3">
+            {JOBS.map((j) => (
+              <button key={j} type="button" onClick={() => setJobFilter(jobFilter === j ? null : j)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${jobFilter === j ? 'text-white border-transparent' : 'bg-transparent border-white/20 text-gray-400 hover:border-white/40 hover:text-white'}`}
+                style={jobFilter === j ? { background: jobColor(j), borderColor: jobColor(j) } : {}}>
+                {JOB_ICON[j] && <img src={JOB_ICON[j]} alt={j} width={12} height={12} className="object-contain" />}
+                {j}
+              </button>
+            ))}
+          </div>
           {unassigned.length === 0
             ? <p className="text-gray-400 text-sm text-center py-8">ไม่มีสมาชิกที่ยังไม่ได้ assign</p>
             : (
@@ -479,12 +501,12 @@ function SlotModal({ state, onClose, onRefresh }: {
               </label>
             </div>
             {allSkills.length > 0 ? (
-              <div className="grid grid-cols-8 gap-1.5 max-h-32 overflow-y-auto bg-black/20 rounded-xl p-2">
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto bg-black/20 rounded-xl p-2">
                 {allSkills.map((s) => {
                   const selected = newSkills.some((ns) => ns.id === s.id)
                   return (
                     <button key={s.id} type="button" onClick={() => toggleSkill(s)}
-                      className={`rounded-lg overflow-hidden border-2 transition-colors aspect-square ${selected ? 'border-blue-500 ring-2 ring-blue-400/30' : 'border-transparent hover:border-white/30'}`}>
+                      className={`w-10 h-10 shrink-0 rounded-lg overflow-hidden border-2 transition-colors ${selected ? 'border-blue-500 ring-2 ring-blue-400/30' : 'border-transparent hover:border-white/30'}`}>
                       <Image src={s.imagePath} alt="skill" width={40} height={40} className="object-cover w-full h-full" />
                     </button>
                   )
@@ -554,9 +576,13 @@ function CompactEmptySlot({ adminMode, onClick }: { adminMode: boolean; onClick:
 }
 
 // ─── Zone Panel (shows all sections of a zone) ────────────────────────────────
-function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false }: {
+function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDragStart, onDropSection, dragOverSectionId, setDragOverSectionId }: {
   zone: Zone; adminMode: boolean; search: string; compact?: boolean
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
+  onDragStart?: (uid: string) => void
+  onDropSection?: (sectionId: number) => void
+  dragOverSectionId?: number | null
+  setDragOverSectionId?: (id: number | null) => void
 }) {
   const q = search.trim().toLowerCase()
   const sections = zone.sections.filter((s) => !SPECIAL.includes(s.name))
@@ -572,11 +598,17 @@ function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false }: {
           const sorted = [...sec.attendees].sort((a, b) => (a.tags?.includes('หัวหน้าทีม') ? 0 : 1) - (b.tags?.includes('หัวหน้าทีม') ? 0 : 1))
           const filtered = q ? sorted.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) : sorted
           const emptyCount = Math.max(0, CAPACITY - sorted.length)
+          const isOver = dragOverSectionId === sec.id
           return (
-            <div key={sec.id} className={`flex-1 flex flex-col gap-1.5 min-w-0 ${compact ? '' : 'overflow-y-auto'}`}>
+            <div key={sec.id}
+              className={`flex-1 flex flex-col gap-1.5 min-w-0 rounded-lg transition-colors ${compact ? '' : 'overflow-y-auto'} ${isOver && adminMode ? 'bg-blue-500/15 ring-2 ring-blue-400/50' : ''}`}
+              onDragOver={adminMode ? (e) => { e.preventDefault(); setDragOverSectionId?.(sec.id) } : undefined}
+              onDragLeave={adminMode ? () => setDragOverSectionId?.(null) : undefined}
+              onDrop={adminMode ? (e) => { e.preventDefault(); setDragOverSectionId?.(null); onDropSection?.(sec.id) } : undefined}>
               <p className="text-center text-white/40 text-xs font-medium shrink-0">× {sec.name} <span className="text-white/25">({sec.attendees.length})</span></p>
               {filtered.map((m) => (
-                <MemberCard key={m.uid} member={m} adminMode={adminMode} compact={compact} onClick={() => onSlotClick(sec, 'edit', m)} />
+                <MemberCard key={m.uid} member={m} adminMode={adminMode} compact={compact}
+                  onClick={() => onSlotClick(sec, 'edit', m)} onDragStart={onDragStart} />
               ))}
               {!q && Array.from({ length: emptyCount }, (_, i) => (
                 <EmptySlot key={i} adminMode={adminMode} onClick={() => onSlotClick(sec, 'add')} />
@@ -590,9 +622,13 @@ function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false }: {
 }
 
 // ─── Special Zone Panel (ลา / สำรอง) ─────────────────────────────────────────
-function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick }: {
+function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick, onDragStart, onDropSection, dragOverSectionId, setDragOverSectionId }: {
   label: string; sections: Section[]; adminMode: boolean; search: string
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
+  onDragStart?: (uid: string) => void
+  onDropSection?: (sectionId: number) => void
+  dragOverSectionId?: number | null
+  setDragOverSectionId?: (id: number | null) => void
 }) {
   const q = search.trim().toLowerCase()
   const allMembers = sections.flatMap((s) => {
@@ -600,18 +636,21 @@ function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick }: {
     return q ? sorted.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) : sorted
   })
   const sec = sections[0]
+  const isOver = sec && dragOverSectionId === sec.id
   return (
     <div className="h-full flex flex-col gap-2 p-3 rounded-xl"
       style={{ background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(3px)' }}>
       <div className="flex items-center gap-2 shrink-0">
         <Image src="/logo-4am.png" alt="4AM" width={28} height={28} className="object-contain" />
         <p className="text-xs font-bold text-white/60 uppercase tracking-widest">TACTICAL HUB — {label} <span className="text-white/30 font-normal normal-case">({allMembers.length})</span></p>
-
       </div>
-      <div className="flex-1 overflow-y-auto flex flex-col gap-1.5">
+      <div className={`flex-1 overflow-y-auto flex flex-col gap-1.5 rounded-lg transition-colors ${isOver && adminMode ? 'bg-blue-500/15 ring-2 ring-blue-400/50' : ''}`}
+        onDragOver={adminMode && sec ? (e) => { e.preventDefault(); setDragOverSectionId?.(sec.id) } : undefined}
+        onDragLeave={adminMode ? () => setDragOverSectionId?.(null) : undefined}
+        onDrop={adminMode && sec ? (e) => { e.preventDefault(); setDragOverSectionId?.(null); onDropSection?.(sec.id) } : undefined}>
         {allMembers.map((m) => (
           <MemberCard key={m.uid} member={m} adminMode={adminMode}
-            onClick={() => sec && onSlotClick(sec, 'edit', m)} />
+            onClick={() => sec && onSlotClick(sec, 'edit', m)} onDragStart={onDragStart} />
         ))}
         {allMembers.length === 0 && <p className="text-white/20 text-xs text-center py-4">ไม่มี</p>}
         {adminMode && sec && <EmptySlot adminMode={adminMode} onClick={() => onSlotClick(sec, 'add')} />}
@@ -621,8 +660,9 @@ function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick }: {
 }
 
 // ─── Member Card ──────────────────────────────────────────────────────────────
-function MemberCard({ member, adminMode, onClick, compact = false }: {
+function MemberCard({ member, adminMode, onClick, compact = false, onDragStart }: {
   member: Attendee; adminMode: boolean; onClick: () => void; compact?: boolean
+  onDragStart?: (uid: string) => void
 }) {
   const [showSkillTooltip, setShowSkillTooltip] = useState(false)
   const isLeader = member.tags?.includes('หัวหน้าทีม')
@@ -637,8 +677,10 @@ function MemberCard({ member, adminMode, onClick, compact = false }: {
 
   return (
     <div
+      draggable={adminMode}
+      onDragStart={adminMode ? (e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(member.uid) } : undefined}
       onClick={adminMode ? onClick : undefined}
-      className={`relative rounded-xl overflow-hidden transition-all ${adminMode ? 'cursor-pointer hover:brightness-110' : ''}`}
+      className={`relative rounded-xl overflow-hidden transition-all ${adminMode ? 'cursor-grab active:cursor-grabbing hover:brightness-110' : ''}`}
       style={{
         borderWidth: 2,
         borderStyle: 'solid',
@@ -784,6 +826,18 @@ export default function Home() {
   const [pwError, setPwError] = useState('')
   const [search, setSearch] = useState('')
   const [slotModal, setSlotModal] = useState<ModalState | null>(null)
+  const [draggedUid, setDraggedUid] = useState<string | null>(null)
+  const [dragOverSectionId, setDragOverSectionId] = useState<number | null>(null)
+
+  async function handleDrop(sectionId: number) {
+    if (!draggedUid) return
+    await fetch(`/api/attendees/${draggedUid}/section`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sectionId }),
+    })
+    setDraggedUid(null)
+    load()
+  }
 
   async function load() {
     const res = await fetch('/api/zones')
@@ -890,7 +944,9 @@ export default function Home() {
           <div className="flex flex-col gap-3">
             {/* TeamA, TeamB, TeamC แนวตั้ง */}
             {teamZones.map((zone) => (
-              <ZonePanel key={zone.id} zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal} compact />
+              <ZonePanel key={zone.id} zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal} compact
+                onDragStart={setDraggedUid} onDropSection={handleDrop}
+                dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
             ))}
             {/* สำรอง + ลา แนวนอน */}
             <div className="flex gap-2">
@@ -898,7 +954,9 @@ export default function Home() {
                 const secs = zones.flatMap((z) => z.sections.filter((s) => s.name === label))
                 return (
                   <div key={label} className="flex-1 min-w-0">
-                    <SpecialZonePanel label={label} sections={secs} adminMode={adminMode} search={search} onSlotClick={openSlotModal} />
+                    <SpecialZonePanel label={label} sections={secs} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
+                      onDragStart={setDraggedUid} onDropSection={handleDrop}
+                      dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
                   </div>
                 )
               })}
@@ -909,13 +967,17 @@ export default function Home() {
             {/* Team zones */}
             {teamZones.map((zone) => (
               <div key={zone.id} className="flex-1 min-w-0 overflow-y-auto">
-                <ZonePanel zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal} />
+                <ZonePanel zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
+                  onDragStart={setDraggedUid} onDropSection={handleDrop}
+                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
               </div>
             ))}
             {/* Special view (ลา / สำรอง) */}
             {specialSections.length > 0 && (
               <div className="flex-1 min-w-0 overflow-y-auto">
-                <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode} search={search} onSlotClick={openSlotModal} />
+                <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
+                  onDragStart={setDraggedUid} onDropSection={handleDrop}
+                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
               </div>
             )}
           </div>
