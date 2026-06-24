@@ -819,7 +819,7 @@ type ViewMode = 'TeamA' | 'TeamB' | 'TeamC' | 'ลา' | 'สำรอง' | '�
 
 export default function Home() {
   const [zones, setZones] = useState<Zone[]>([])
-  const [view, setView] = useState<ViewMode>('TeamA')
+  const [view, setView] = useState<ViewMode>('ทั้งหมด')
   const [adminMode, setAdminMode] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [password, setPassword] = useState('')
