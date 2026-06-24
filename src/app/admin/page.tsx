@@ -12,7 +12,7 @@ type Zone = { id: number; name: string; label: string; sections: Section[] }
 
 const JOBS = ['IRONCRAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE']
 
-export default function AdminPage() {
+function AdminContent() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [attendees, setAttendees] = useState<Attendee[]>([])
   const [zones, setZones] = useState<Zone[]>([])
@@ -331,6 +331,41 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+    </main>
+  )
+}
+
+export default function AdminPage() {
+  const [authed, setAuthed] = useState(false)
+  const [password, setPassword] = useState('')
+  const [pwError, setPwError] = useState('')
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault()
+    const res = await fetch('/api/auth', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+    if (res.ok) { setAuthed(true); setPwError('') }
+    else setPwError('รหัสผ่านไม่ถูกต้อง')
+  }
+
+  if (authed) return <AdminContent />
+
+  return (
+    <main className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <form onSubmit={handleLogin} className="bg-gray-900 border border-gray-800 rounded-2xl shadow-xl p-8 w-80">
+        <h2 className="text-lg font-bold text-white mb-1">Admin — ยืนยันตัวตน</h2>
+        <p className="text-sm text-gray-400 mb-5">ใส่รหัสผ่านเพื่อเข้าหน้า Admin</p>
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus
+          placeholder="รหัสผ่าน"
+          className="w-full bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 mb-2" />
+        {pwError && <p className="text-red-400 text-xs mb-3">{pwError}</p>}
+        <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 text-sm font-medium transition-colors mt-1">
+          เข้าสู่ระบบ
+        </button>
+        <a href="/" className="block text-center text-xs text-gray-500 hover:text-gray-300 mt-4 transition-colors">← กลับหน้าหลัก</a>
+      </form>
     </main>
   )
 }
