@@ -12,13 +12,13 @@ type Attendee = {
 type Section = { id: number; name: string; attendees: Attendee[] }
 type Zone = { id: number; name: string; label: string; sections: Section[] }
 
-const JOBS = ['IRONCRAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE']
+const JOBS = ['IRONCLAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE']
 const JOB_COLOR: Record<string, string> = {
-  IRONCRAD: '#f59e0b', BLOODSTORM: '#ef4444', CELESTUNE: '#3b82f6',
+  IRONCLAD: '#f59e0b', BLOODSTORM: '#ef4444', CELESTUNE: '#3b82f6',
   NIGHTWAKER: '#06b6d4', NUMINA: '#a855f7', SYLPH: '#ec4899', DRAGONSVELTE: '#22c55e',
 }
 const JOB_ICON: Record<string, string> = {
-  IRONCRAD: 'https://cdn.discordapp.com/emojis/1497898275871789166.png',
+  IRONCLAD: 'https://cdn.discordapp.com/emojis/1497898275871789166.png',
   SYLPH: 'https://cdn.discordapp.com/emojis/1497905719146709185.png',
   NUMINA: 'https://cdn.discordapp.com/emojis/1489512270202535987.png',
   BLOODSTORM: 'https://cdn.discordapp.com/emojis/1489501000652820510.png',
@@ -799,50 +799,48 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
         height: '110px',
       }}>
 
-      {/* Job icon watermark left */}
-      {JOB_ICON[member.job] && (
-        <img src={JOB_ICON[member.job]} alt=""
-          className="absolute left-1 top-1/2 -translate-y-1/2 object-contain pointer-events-none select-none"
-          style={{ width: 68, height: 68, opacity: 0.15, filter: 'saturate(0.5)' }} />
-      )}
-
       {adminMode && <div className="absolute top-1.5 right-1.5 text-white/25 text-xs z-10">✎</div>}
 
+      {/* Layout: icon | name+job | skills */}
+      <div className="relative z-10 h-full flex items-center overflow-hidden">
 
-      {/* Layout: center (name+job) | right (skills) */}
-      <div className="relative z-10 px-3 py-2 h-full flex items-center gap-2 overflow-hidden">
-
-        {/* Center: name + job */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-0.5 min-w-0">
-          <div className="flex items-center gap-1">
-            {isLeader && <span className="text-yellow-400 text-xs">👑</span>}
-            <p className="font-bold leading-tight truncate text-center" style={{ color: '#c9a84c', fontSize: '0.85rem' }}>{member.memberName}</p>
-          </div>
-          <div className="flex items-center gap-1">
-            <p className="text-xs font-black uppercase tracking-widest" style={{ color }}>{member.job}</p>
-            {JOB_ICON[member.job] && (
-              <img src={JOB_ICON[member.job]} alt={member.job} width={13} height={13} className="object-contain" />
-            )}
-          </div>
+        {/* Left: job icon */}
+        <div className="shrink-0 flex items-center justify-center" style={{ width: 72 }}>
+          {JOB_ICON[member.job] && (
+            <img src={JOB_ICON[member.job]} alt={member.job}
+              className="object-contain"
+              style={{ width: 56, height: 56 }} />
+          )}
         </div>
 
-        {/* Right: skills grid 2×3 + overflow badge */}
-        {member.skills.length > 0 && (
-          <div className="flex items-center gap-1 shrink-0">
-            <div className="grid grid-cols-2 gap-1 shrink-0" style={{ width: 54 }}>
-              {visibleSkills.map((s) => (
-                <Image key={s.id} src={s.imagePath} alt="skill" width={25} height={25} className="rounded-full object-cover w-full h-auto aspect-square" />
-              ))}
-            </div>
-            {hiddenSkills.length > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowSkillTooltip(true) }}
-                className="w-7 h-7 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white text-xs font-bold hover:bg-white/30 transition-colors shrink-0">
-                +{hiddenSkills.length}
-              </button>
-            )}
+        {/* Center: name + job */}
+        <div className="flex-1 flex flex-col justify-center gap-0.5 min-w-0">
+          <div className="flex items-center gap-1">
+            {isLeader && <span className="text-yellow-400 text-sm">👑</span>}
+            <p className="font-bold leading-tight truncate" style={{ color: '#ffffff', fontSize: '1rem' }}>{member.memberName}</p>
           </div>
-        )}
+          <p className="text-xs font-black uppercase tracking-widest" style={{ color }}>{member.job}</p>
+        </div>
+
+        {/* Right: skills grid */}
+        <div className="shrink-0 flex items-center justify-center pr-3">
+          {member.skills.length > 0 && (
+            <div className="flex items-center gap-1">
+              <div className="grid grid-cols-2 gap-1" style={{ width: 70 }}>
+                {visibleSkills.map((s) => (
+                  <Image key={s.id} src={s.imagePath} alt="skill" width={32} height={32} className="rounded-full object-cover w-full h-auto aspect-square" />
+                ))}
+              </div>
+              {hiddenSkills.length > 0 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowSkillTooltip(true) }}
+                  className="w-7 h-7 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white text-xs font-bold hover:bg-white/30 transition-colors shrink-0">
+                  +{hiddenSkills.length}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Skill modal — rendered via portal outside card */}
         {showSkillTooltip && createPortal(
@@ -945,6 +943,23 @@ export default function Home() {
   const [dragged, setDragged] = useState<{ uid: string; sectionId: number | null; position: number | null } | null>(null)
   const [dragOverSectionId, setDragOverSectionId] = useState<number | null>(null)
   const [pageJobFilter, setPageJobFilter] = useState<string | null>(null)
+  const [capturing, setCapturing] = useState(false)
+  const captureRef = useRef<HTMLDivElement>(null)
+
+  async function handleCapture() {
+    if (!captureRef.current) return
+    setCapturing(true)
+    try {
+      const { domToPng } = await import('modern-screenshot')
+      const dataUrl = await domToPng(captureRef.current, { scale: 2 })
+      const link = document.createElement('a')
+      link.download = `checklist-${new Date().toISOString().slice(0, 16).replace('T', '_')}.png`
+      link.href = dataUrl
+      link.click()
+    } finally {
+      setCapturing(false)
+    }
+  }
 
   async function handleDrop(targetSectionId: number, position?: number) {
     if (!dragged) return
@@ -1066,7 +1081,7 @@ export default function Home() {
   const q = search.trim().toLowerCase()
 
   return (
-    <main className={`${view === 'ทั้งหมด' ? 'min-h-screen overflow-y-auto' : 'h-screen overflow-hidden'} px-3 py-3 relative`}
+    <main ref={captureRef} className={`${view === 'ทั้งหมด' ? 'min-h-screen overflow-y-auto' : 'h-screen overflow-hidden'} px-3 py-3 relative`}
       style={{
         backgroundImage: 'url(/bg-dragon.png)',
         backgroundSize: 'cover',
@@ -1124,6 +1139,12 @@ export default function Home() {
             <button onClick={handleAdminToggle}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors backdrop-blur ${adminMode ? 'bg-blue-600 text-white border-blue-500' : 'bg-black/30 text-gray-300 border-white/20 hover:border-blue-400 hover:text-white'}`}>
               {adminMode ? '✎ Modify' : '✎ Modify'}
+            </button>
+
+            {/* Capture button */}
+            <button onClick={handleCapture} disabled={capturing}
+              className="px-3 py-1 rounded-full text-xs font-medium border border-white/20 bg-black/30 text-gray-300 hover:border-green-400 hover:text-green-300 transition-colors backdrop-blur disabled:opacity-50">
+              {capturing ? '⏳' : '📷'} Capture
             </button>
           </div>
         </div>
