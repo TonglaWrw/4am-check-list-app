@@ -49,8 +49,9 @@ type ModalState =
   | { type: 'add'; sectionId: number; sectionName: string }
   | { type: 'edit'; member: Attendee; sectionId: number; teamAttendees: Attendee[] }
 
-function SlotModal({ state, onClose, onRefresh }: {
+function SlotModal({ state, onClose, onRefresh, onQuickMove }: {
   state: ModalState; onClose: () => void; onRefresh: () => void
+  onQuickMove?: (uid: string, target: 'ลา' | 'สำรอง') => void
 }) {
   // shared state
   const [tab, setTab] = useState<'pick' | 'new'>('pick')
@@ -273,8 +274,8 @@ function SlotModal({ state, onClose, onRefresh }: {
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">✕</button>
         </div>
 
-        {/* Tags */}
-        <div className="flex gap-2 mb-4">
+        {/* Tags + Quick move */}
+        <div className="flex flex-wrap gap-2 mb-4">
           {(() => {
             const has = memberTags.includes('หัวหน้าทีม')
             return (
@@ -284,6 +285,20 @@ function SlotModal({ state, onClose, onRefresh }: {
               </button>
             )
           })()}
+          {onQuickMove && (
+            <>
+              <button type="button"
+                onClick={() => { onQuickMove(m.uid, 'ลา'); onClose() }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-red-500/50 text-red-400 hover:bg-red-900/40 hover:border-red-400 transition-colors">
+                🏃 ลา
+              </button>
+              <button type="button"
+                onClick={() => { onQuickMove(m.uid, 'สำรอง'); onClose() }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-yellow-500/50 text-yellow-400 hover:bg-yellow-900/40 hover:border-yellow-400 transition-colors">
+                ⏳ สำรอง
+              </button>
+            </>
+          )}
         </div>
 
         {/* Leader conflict confirmation */}
@@ -581,15 +596,61 @@ function CompactEmptySlot({ adminMode, onClick }: { adminMode: boolean; onClick:
   )
 }
 
+// ─── Section Header (inline editable in admin mode) ──────────────────────────
+function SectionHeader({ section, adminMode, onRename }: {
+  section: Section; adminMode: boolean; onRename?: (id: number, name: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(section.name)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { setValue(section.name) }, [section.name])
+
+  function startEdit() {
+    if (!adminMode || !onRename) return
+    setEditing(true)
+    setTimeout(() => { inputRef.current?.select() }, 0)
+  }
+
+  function save() {
+    setEditing(false)
+    const trimmed = value.trim()
+    if (!trimmed || trimmed === section.name) { setValue(section.name); return }
+    onRename?.(section.id, trimmed)
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1.5 shrink-0 min-w-0 px-1">
+      {editing ? (
+        <input ref={inputRef} value={value} onChange={(e) => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setEditing(false); setValue(section.name) } }}
+          className="text-center text-white text-base font-black w-full bg-white/10 border border-blue-400 rounded-lg px-2 py-0.5 outline-none" />
+      ) : (
+        <>
+          <p
+            onClick={startEdit}
+            className={`text-center font-black text-base text-white truncate ${adminMode && onRename ? 'cursor-pointer hover:text-blue-300 transition-colors' : ''}`}>
+            {section.name}
+          </p>
+          {adminMode && onRename && <span className="text-white/25 text-xs shrink-0">✎</span>}
+        </>
+      )}
+      <span className="text-white/30 text-xs shrink-0">({section.attendees.length})</span>
+    </div>
+  )
+}
+
 // ─── Zone Panel (shows all sections of a zone) ────────────────────────────────
-function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId }: {
-  zone: Zone; adminMode: boolean; search: string; compact?: boolean
+function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = false, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onRename }: {
+  zone: Zone; adminMode: boolean; search: string; jobFilter?: string | null; compact?: boolean
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
   onDragStart?: (uid: string, sectionId: number, position: number) => void
   onDropSection?: (sectionId: number, position: number) => void
   onSwap?: (targetUid: string, targetSectionId: number, targetPosition: number) => void
   dragOverSectionId?: number | null
   setDragOverSectionId?: (id: number | null) => void
+  onRename?: (id: number, name: string) => void
 }) {
   const q = search.trim().toLowerCase()
   const sections = zone.sections.filter((s) => !SPECIAL.includes(s.name))
@@ -619,16 +680,17 @@ function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDr
           return (
             <div key={sec.id}
               className={`flex-1 flex flex-col gap-1.5 min-w-0 rounded-lg transition-colors ${compact ? '' : 'overflow-y-auto'}`}>
-              <p className="text-center text-white/40 text-xs font-medium shrink-0">× {sec.name} <span className="text-white/25">({sec.attendees.length})</span></p>
-              {q ? (
-                // search mode: just show filtered members
+              <SectionHeader section={sec} adminMode={adminMode} onRename={onRename} />
+              {(q || jobFilter) ? (
+                // search/filter mode: show matching members only
                 sec.attendees
-                  .filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q))
+                  .filter((a) => (!q || a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) && (!jobFilter || a.job === jobFilter))
                   .map((m) => (
                     <MemberCard key={m.uid} member={m} adminMode={adminMode} compact={compact}
                       onClick={() => onSlotClick(sec, 'edit', m)}
                       onDragStart={(uid) => onDragStart?.(uid, sec.id, m.position ?? 0)}
-                      onDropOnMember={(targetUid) => onSwap?.(targetUid, sec.id, m.position ?? 0)} />
+                      onDropOnMember={(targetUid) => onSwap?.(targetUid, sec.id, m.position ?? 0)}
+                      />
                   ))
               ) : (
                 // normal mode: CAPACITY fixed slots
@@ -638,7 +700,8 @@ function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDr
                     <MemberCard key={m.uid} member={m} adminMode={adminMode} compact={compact}
                       onClick={() => onSlotClick(sec, 'edit', m)}
                       onDragStart={(uid) => onDragStart?.(uid, sec.id, slotIdx)}
-                      onDropOnMember={(targetUid) => onSwap?.(targetUid, sec.id, slotIdx)} />
+                      onDropOnMember={(targetUid) => onSwap?.(targetUid, sec.id, slotIdx)}
+                      />
                   ) : (
                     <EmptySlot key={`empty-${slotIdx}`} adminMode={adminMode}
                       onClick={() => onSlotClick(sec, 'add')}
@@ -655,8 +718,8 @@ function ZonePanel({ zone, adminMode, search, onSlotClick, compact = false, onDr
 }
 
 // ─── Special Zone Panel (ลา / สำรอง) ─────────────────────────────────────────
-function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId }: {
-  label: string; sections: Section[]; adminMode: boolean; search: string
+function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlotClick, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId }: {
+  label: string; sections: Section[]; adminMode: boolean; search: string; jobFilter?: string | null
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
   onDragStart?: (uid: string, sectionId: number, position: number) => void
   onDropSection?: (sectionId: number, position: number) => void
@@ -666,7 +729,10 @@ function SpecialZonePanel({ label, sections, adminMode, search, onSlotClick, onD
 }) {
   const q = search.trim().toLowerCase()
   const allMembers = sections.flatMap((s) =>
-    q ? s.attendees.filter((a) => a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) : s.attendees
+    s.attendees.filter((a) =>
+      (!q || a.memberName.toLowerCase().includes(q) || a.uid.includes(q)) &&
+      (!jobFilter || a.job === jobFilter)
+    )
   )
   const sec = sections[0]
   const isOver = sec && dragOverSectionId === sec.id
@@ -702,7 +768,6 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
   member: Attendee; adminMode: boolean; onClick: () => void; compact?: boolean
   onDragStart?: (uid: string) => void
   onDropOnMember?: (targetUid: string) => void
-  // position handled by parent
 }) {
   const [showSkillTooltip, setShowSkillTooltip] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -742,6 +807,7 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
       )}
 
       {adminMode && <div className="absolute top-1.5 right-1.5 text-white/25 text-xs z-10">✎</div>}
+
 
       {/* Layout: center (name+job) | right (skills) */}
       <div className="relative z-10 px-3 py-2 h-full flex items-center gap-2 overflow-hidden">
@@ -878,6 +944,7 @@ export default function Home() {
   const [slotModal, setSlotModal] = useState<ModalState | null>(null)
   const [dragged, setDragged] = useState<{ uid: string; sectionId: number | null; position: number | null } | null>(null)
   const [dragOverSectionId, setDragOverSectionId] = useState<number | null>(null)
+  const [pageJobFilter, setPageJobFilter] = useState<string | null>(null)
 
   async function handleDrop(targetSectionId: number, position?: number) {
     if (!dragged) return
@@ -886,6 +953,24 @@ export default function Home() {
       body: JSON.stringify({ sectionId: targetSectionId, position: position ?? null }),
     })
     setDragged(null)
+    load()
+  }
+
+  async function handleRename(sectionId: number, name: string) {
+    await fetch(`/api/sections/${sectionId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    load()
+  }
+
+  async function handleQuickMove(uid: string, target: 'ลา' | 'สำรอง') {
+    const targetSection = zones.flatMap((z) => z.sections).find((s) => s.name === target)
+    if (!targetSection) return
+    await fetch(`/api/attendees/${uid}/section`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sectionId: targetSection.id, position: null }),
+    })
     load()
   }
 
@@ -910,10 +995,24 @@ export default function Home() {
     const data = await res.json()
     setZones(data.zones)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    try {
+      const stored = localStorage.getItem('adminSession')
+      if (stored) {
+        const { timestamp } = JSON.parse(stored)
+        if (Date.now() - timestamp < 5 * 60 * 60 * 1000) setAdminMode(true)
+        else localStorage.removeItem('adminSession')
+      }
+    } catch { /* ignore */ }
+  }, [])
 
   async function handleAdminToggle() {
-    if (adminMode) { setAdminMode(false); return }
+    if (adminMode) {
+      setAdminMode(false)
+      try { localStorage.removeItem('adminSession') } catch { /* ignore */ }
+      return
+    }
     setShowModal(true); setPassword(''); setPwError('')
   }
 
@@ -923,8 +1022,10 @@ export default function Home() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),
     })
-    if (res.ok) { setAdminMode(true); setShowModal(false); setPassword(''); setPwError('') }
-    else setPwError('รหัสผ่านไม่ถูกต้อง')
+    if (res.ok) {
+      setAdminMode(true); setShowModal(false); setPassword(''); setPwError('')
+      try { localStorage.setItem('adminSession', JSON.stringify({ timestamp: Date.now() })) } catch { /* ignore */ }
+    } else setPwError('รหัสผ่านไม่ถูกต้อง')
   }
 
   function zoneOf(name: string) { return zones.find((z) => z.name === name) }
@@ -942,10 +1043,12 @@ export default function Home() {
 
   const allSections = zones.flatMap((z) => z.sections)
   const laCount = allSections.filter((s) => s.name === 'ลา').reduce((n, s) => n + s.attendees.length, 0)
+  const sarongCount = allSections.filter((s) => s.name === 'สำรอง').reduce((n, s) => n + s.attendees.length, 0)
   const totalCount = allSections.reduce((n, s) => n + s.attendees.length, 0)
-  const maCount = totalCount - laCount
+  const warAttendees = allSections.filter((s) => !SPECIAL.includes(s.name)).flatMap((s) => s.attendees)
+  const jobCounts = JOBS.map((job) => ({ job, count: warAttendees.filter((a) => a.job === job).length }))
 
-  const TABS: ViewMode[] = ['TeamA', 'TeamB', 'TeamC', 'ลา', 'สำรอง', 'ทั้งหมด']
+  const TABS: ViewMode[] = ['ทั้งหมด', 'TeamA', 'TeamB', 'TeamC', 'ลา', 'สำรอง']
   const TAB_ACTIVE: Partial<Record<ViewMode, string>> = { ลา: 'bg-red-500 text-white border-red-500', สำรอง: 'bg-yellow-500 text-white border-yellow-500' }
   const TAB_INACTIVE: Partial<Record<ViewMode, string>> = { ลา: 'text-red-400 border-red-500/40', สำรอง: 'text-yellow-400 border-yellow-500/40' }
 
@@ -973,36 +1076,56 @@ export default function Home() {
 
       <div className={`${view === 'ทั้งหมด' ? 'flex flex-col gap-2' : 'h-full flex flex-col gap-2'} relative z-10`}>
         {/* Top bar */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Tabs */}
-          <div className="flex gap-1.5 flex-wrap">
+        <div className="flex flex-col gap-2">
+          {/* Tabs row — centered */}
+          <div className="flex items-center justify-center gap-2 flex-wrap">
             {TABS.map((t) => (
               <button key={t} onClick={() => setView(t)}
-                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors backdrop-blur flex items-center gap-1 ${view === t ? (TAB_ACTIVE[t] ?? 'bg-white/20 text-white border-white/30') : (TAB_INACTIVE[t] ?? 'bg-black/30 text-gray-300 border-white/10 hover:bg-white/10')}`}>
+                className={`px-5 py-2 rounded-full text-sm font-semibold border transition-colors backdrop-blur flex items-center gap-1.5 ${view === t ? (TAB_ACTIVE[t] ?? 'bg-white/20 text-white border-white/30') : (TAB_INACTIVE[t] ?? 'bg-black/30 text-gray-300 border-white/10 hover:bg-white/10')}`}>
                 {t}
-                {t === 'ลา' && laCount > 0 && <span className={`text-xs font-bold px-1 py-0 rounded-full leading-none ${view === 'ลา' ? 'bg-white/30' : 'bg-red-500 text-white'}`}>{laCount}</span>}
+                {t === 'ลา' && laCount > 0 && <span className={`text-xs font-bold px-1.5 py-0 rounded-full leading-none ${view === 'ลา' ? 'bg-white/30' : 'bg-red-500 text-white'}`}>{laCount}</span>}
+                {t === 'สำรอง' && sarongCount > 0 && <span className={`text-xs font-bold px-1.5 py-0 rounded-full leading-none ${view === 'สำรอง' ? 'bg-white/30' : 'bg-yellow-500 text-black'}`}>{sarongCount}</span>}
               </button>
             ))}
           </div>
-          {/* Search */}
-          <div className="relative flex-1 max-w-xs">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
-            <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="ค้นหาชื่อ หรือ UID..."
-              className="w-full bg-black/40 border border-white/20 rounded-full pl-7 pr-7 py-1 text-xs text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 backdrop-blur" />
-            {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs">✕</button>}
+
+          {/* Controls row */}
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            {/* Search */}
+            <div className="relative flex-1 max-w-xs">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+              <input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="ค้นหาชื่อ หรือ UID..."
+                className="w-full bg-black/40 border border-white/20 rounded-full pl-7 pr-7 py-1 text-xs text-white placeholder-gray-400 focus:outline-none focus:border-blue-400 backdrop-blur" />
+              {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs">✕</button>}
+            </div>
+
+            {/* Job stats */}
+            <div className="flex items-center gap-1 flex-wrap">
+              {jobCounts.map(({ job, count }) => count > 0 && (
+                <button key={job} onClick={() => setPageJobFilter(pageJobFilter === job ? null : job)}
+                  className="flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-semibold border transition-all"
+                  style={{
+                    borderColor: pageJobFilter === job ? jobColor(job) : `${jobColor(job)}50`,
+                    background: pageJobFilter === job ? `${jobColor(job)}40` : `${jobColor(job)}18`,
+                    color: jobColor(job),
+                    boxShadow: pageJobFilter === job ? `0 0 8px ${jobColor(job)}60` : 'none',
+                  }}>
+                  {JOB_ICON[job] && <img src={JOB_ICON[job]} alt={job} width={13} height={13} className="object-contain" />}
+                  {count}
+                </button>
+              ))}
+              <span className="bg-white/5 text-gray-300 border border-white/10 px-2 py-0.5 rounded-full text-xs font-semibold">รวม {totalCount}</span>
+              {laCount > 0 && <span className="bg-red-900/40 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full text-xs font-semibold">ลา {laCount}</span>}
+              {sarongCount > 0 && <span className="bg-yellow-900/40 text-yellow-400 border border-yellow-500/30 px-2 py-0.5 rounded-full text-xs font-semibold">สำรอง {sarongCount}</span>}
+            </div>
+
+            {/* Modify button */}
+            <button onClick={handleAdminToggle}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors backdrop-blur ${adminMode ? 'bg-blue-600 text-white border-blue-500' : 'bg-black/30 text-gray-300 border-white/20 hover:border-blue-400 hover:text-white'}`}>
+              {adminMode ? '✎ Modify' : '✎ Modify'}
+            </button>
           </div>
-          {/* Stats */}
-          <div className="flex gap-1 text-xs">
-            <span className="bg-green-900/40 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full">มา: {maCount}</span>
-            <span className="bg-red-900/40 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full">ลา: {laCount}</span>
-            <span className="bg-white/5 text-gray-300 border border-white/10 px-2 py-0.5 rounded-full">รวม: {totalCount}</span>
-          </div>
-          {/* Admin */}
-          <button onClick={handleAdminToggle}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors backdrop-blur ${adminMode ? 'bg-blue-600 text-white border-blue-500' : 'bg-black/30 text-gray-300 border-white/20 hover:border-blue-400 hover:text-white'}`}>
-            {adminMode ? '✎ Admin' : '✎ แก้ไข'}
-          </button>
         </div>
 
         {/* Content */}
@@ -1010,9 +1133,9 @@ export default function Home() {
           <div className="flex flex-col gap-3">
             {/* TeamA, TeamB, TeamC แนวตั้ง */}
             {teamZones.map((zone) => (
-              <ZonePanel key={zone.id} zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal} compact
+              <ZonePanel key={zone.id} zone={zone} adminMode={adminMode} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal} compact
                 onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
-                dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
+                dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} />
             ))}
             {/* สำรอง + ลา แนวนอน */}
             <div className="flex gap-2">
@@ -1020,7 +1143,7 @@ export default function Home() {
                 const secs = zones.flatMap((z) => z.sections.filter((s) => s.name === label))
                 return (
                   <div key={label} className="flex-1 min-w-0">
-                    <SpecialZonePanel label={label} sections={secs} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
+                    <SpecialZonePanel label={label} sections={secs} adminMode={adminMode} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                       onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                       dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
                   </div>
@@ -1033,15 +1156,15 @@ export default function Home() {
             {/* Team zones */}
             {teamZones.map((zone) => (
               <div key={zone.id} className="flex-1 min-w-0 overflow-y-auto">
-                <ZonePanel zone={zone} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
+                <ZonePanel zone={zone} adminMode={adminMode} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                   onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
-                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
+                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} />
               </div>
             ))}
             {/* Special view (ลา / สำรอง) */}
             {specialSections.length > 0 && (
               <div className="flex-1 min-w-0 overflow-y-auto">
-                <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode} search={search} onSlotClick={openSlotModal}
+                <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                   onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                   dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
               </div>
@@ -1052,7 +1175,7 @@ export default function Home() {
 
       {/* Slot Modal */}
       {slotModal && (
-        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} />
+        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} />
       )}
 
       {/* Password Modal */}

@@ -6,7 +6,7 @@ export async function GET() {
     orderBy: { id: 'asc' },
     include: {
       sections: {
-        orderBy: { name: 'asc' },
+        orderBy: { id: 'asc' },
         include: {
           attendees: {
             include: { skills: { include: { skill: true } } },
