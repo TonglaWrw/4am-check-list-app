@@ -49,9 +49,10 @@ type ModalState =
   | { type: 'add'; sectionId: number; sectionName: string }
   | { type: 'edit'; member: Attendee; sectionId: number; teamAttendees: Attendee[] }
 
-function SlotModal({ state, onClose, onRefresh, onQuickMove }: {
+function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove }: {
   state: ModalState; onClose: () => void; onRefresh: () => void
   onQuickMove?: (uid: string, target: 'ลา' | 'สำรอง') => void
+  onOptimisticMove?: (uid: string, targetSectionId: number | null) => void
 }) {
   // shared state
   const [tab, setTab] = useState<'pick' | 'new'>('pick')
@@ -91,20 +92,22 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove }: {
     .filter((a) => !jobFilter || a.job === jobFilter)
 
   async function assignExisting(uid: string) {
-    await fetch(`/api/attendees/${uid}/section`, {
+    onOptimisticMove?.(uid, state.sectionId)
+    onClose()
+    fetch(`/api/attendees/${uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sectionId: state.sectionId }),
-    })
-    onRefresh(); onClose()
+    }).then(() => onRefresh())
   }
 
   async function removeFromSection() {
     if (state.type !== 'edit') return
-    await fetch(`/api/attendees/${state.member.uid}/section`, {
+    onOptimisticMove?.(state.member.uid, null)
+    onClose()
+    fetch(`/api/attendees/${state.member.uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sectionId: null }),
-    })
-    onRefresh(); onClose()
+    }).then(() => onRefresh())
   }
 
   async function toggleMemberTag(tag: string) {
@@ -123,45 +126,46 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove }: {
     }
 
     const tags = has ? memberTags.filter((t) => t !== tag) : [...memberTags, tag]
-    await fetch(`/api/attendees/${state.member.uid}/tags`, {
+    setMemberTags(tags)
+    fetch(`/api/attendees/${state.member.uid}/tags`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tags }),
-    })
-    setMemberTags(tags)
-    onRefresh()
+    }).then(() => onRefresh())
   }
 
   async function confirmLeaderSwap() {
     if (state.type !== 'edit' || !leaderConflict) return
-    // Remove leader from old
     const oldTags = (leaderConflict.tags ?? []).filter((t) => t !== 'หัวหน้าทีม')
-    await fetch(`/api/attendees/${leaderConflict.uid}/tags`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags: oldTags }),
-    })
-    // Set leader on new
-    const newTags = [...memberTags.filter((t) => t !== 'หัวหน้าทีม'), 'หัวหน้าทีม']
-    await fetch(`/api/attendees/${state.member.uid}/tags`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tags: newTags }),
-    })
-    setMemberTags(newTags)
+    const newTagsList = [...memberTags.filter((t) => t !== 'หัวหน้าทีม'), 'หัวหน้าทีม']
+    setMemberTags(newTagsList)
     setLeaderConflict(null)
-    onRefresh()
+    Promise.all([
+      fetch(`/api/attendees/${leaderConflict.uid}/tags`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: oldTags }),
+      }),
+      fetch(`/api/attendees/${state.member.uid}/tags`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: newTagsList }),
+      }),
+    ]).then(() => onRefresh())
   }
 
   async function swapMember(newUid: string) {
     if (state.type !== 'edit') return
-    // move current out, new in
-    await fetch(`/api/attendees/${state.member.uid}/section`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sectionId: null }),
-    })
-    await fetch(`/api/attendees/${newUid}/section`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sectionId: state.sectionId }),
-    })
-    onRefresh(); onClose()
+    onOptimisticMove?.(state.member.uid, null)
+    onOptimisticMove?.(newUid, state.sectionId)
+    onClose()
+    Promise.all([
+      fetch(`/api/attendees/${state.member.uid}/section`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectionId: null }),
+      }),
+      fetch(`/api/attendees/${newUid}/section`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectionId: state.sectionId }),
+      }),
+    ]).then(() => onRefresh())
   }
 
   async function toggleMemberSkill(skill: Skill) {
@@ -169,19 +173,18 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove }: {
     const uid = state.member.uid
     const has = memberSkills.some((s) => s.id === skill.id)
     if (has) {
-      await fetch(`/api/attendees/${uid}/skills`, {
+      setMemberSkills((prev) => prev.filter((s) => s.id !== skill.id))
+      fetch(`/api/attendees/${uid}/skills`, {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skillId: skill.id }),
-      })
-      setMemberSkills((prev) => prev.filter((s) => s.id !== skill.id))
+      }).then(() => onRefresh())
     } else {
-      await fetch(`/api/attendees/${uid}/skills`, {
+      setMemberSkills((prev) => [...prev, skill])
+      fetch(`/api/attendees/${uid}/skills`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skillId: skill.id }),
-      })
-      setMemberSkills((prev) => [...prev, skill])
+      }).then(() => onRefresh())
     }
-    onRefresh()
   }
 
   async function handleUploadForEdit(e: React.ChangeEvent<HTMLInputElement>) {
@@ -963,52 +966,106 @@ export default function Home() {
 
   async function handleDrop(targetSectionId: number, position?: number) {
     if (!dragged) return
-    await fetch(`/api/attendees/${dragged.uid}/section`, {
+    const uid = dragged.uid
+    optimisticMoveAttendee(uid, targetSectionId)
+    setDragged(null)
+    fetch(`/api/attendees/${uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sectionId: targetSectionId, position: position ?? null }),
-    })
-    setDragged(null)
-    load()
+    }).then(() => load())
   }
 
   async function handleRename(sectionId: number, name: string) {
-    await fetch(`/api/sections/${sectionId}`, {
+    setZones((prev) => prev.map((z) => ({
+      ...z,
+      sections: z.sections.map((s) => s.id === sectionId ? { ...s, name } : s),
+    })))
+    fetch(`/api/sections/${sectionId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
-    })
-    load()
+    }).then(() => load())
   }
 
   async function handleQuickMove(uid: string, target: 'ลา' | 'สำรอง') {
     const targetSection = zones.flatMap((z) => z.sections).find((s) => s.name === target)
     if (!targetSection) return
-    await fetch(`/api/attendees/${uid}/section`, {
+    optimisticMoveAttendee(uid, targetSection.id)
+    fetch(`/api/attendees/${uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sectionId: targetSection.id, position: null }),
-    })
-    load()
+    }).then(() => load())
   }
 
   async function handleSwap(targetUid: string, targetSectionId: number, targetPosition: number | null) {
     if (!dragged || dragged.uid === targetUid) return
-    await Promise.all([
-      fetch(`/api/attendees/${dragged.uid}/section`, {
+    const { uid, sectionId, position } = dragged
+    optimisticSwapAttendees(uid, targetSectionId, targetPosition, targetUid, sectionId, position)
+    setDragged(null)
+    Promise.all([
+      fetch(`/api/attendees/${uid}/section`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sectionId: targetSectionId, position: targetPosition }),
       }),
       fetch(`/api/attendees/${targetUid}/section`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sectionId: dragged.sectionId, position: dragged.position }),
+        body: JSON.stringify({ sectionId, position }),
       }),
-    ])
-    setDragged(null)
-    load()
+    ]).then(() => load())
   }
 
   async function load() {
     const res = await fetch('/api/zones')
     const data = await res.json()
     setZones(data.zones)
+  }
+
+  function optimisticMoveAttendee(uid: string, targetSectionId: number | null) {
+    setZones((prev) => {
+      let attendee: Attendee | undefined
+      for (const z of prev)
+        for (const s of z.sections) {
+          const f = s.attendees.find((a) => a.uid === uid)
+          if (f) { attendee = f; break }
+          if (attendee) break
+        }
+      if (!attendee) return prev
+      return prev.map((z) => ({
+        ...z,
+        sections: z.sections.map((s) => {
+          if (s.attendees.some((a) => a.uid === uid))
+            return { ...s, attendees: s.attendees.filter((a) => a.uid !== uid) }
+          if (targetSectionId !== null && s.id === targetSectionId)
+            return { ...s, attendees: [...s.attendees, { ...attendee!, sectionId: targetSectionId }] }
+          return s
+        }),
+      }))
+    })
+  }
+
+  function optimisticSwapAttendees(uid1: string, sec1: number | null, pos1: number | null, uid2: string, sec2: number | null, pos2: number | null) {
+    setZones((prev) => {
+      const findAttendee = (uid: string) => {
+        for (const z of prev)
+          for (const s of z.sections) {
+            const f = s.attendees.find((a) => a.uid === uid)
+            if (f) return f
+          }
+      }
+      const a1 = findAttendee(uid1)
+      const a2 = findAttendee(uid2)
+      if (!a1 || !a2) return prev
+      return prev.map((z) => ({
+        ...z,
+        sections: z.sections.map((s) => ({
+          ...s,
+          attendees: s.attendees.map((a) => {
+            if (a.uid === uid1) return { ...a2, sectionId: sec1, position: pos1 }
+            if (a.uid === uid2) return { ...a1, sectionId: sec2, position: pos2 }
+            return a
+          }),
+        })),
+      }))
+    })
   }
   useEffect(() => {
     load()
@@ -1196,7 +1253,7 @@ export default function Home() {
 
       {/* Slot Modal */}
       {slotModal && (
-        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} />
+        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} onOptimisticMove={optimisticMoveAttendee} />
       )}
 
       {/* Password Modal */}
