@@ -46,13 +46,14 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
 
 // ─── Slot Modal (add / edit) ──────────────────────────────────────────────────
 type ModalState =
-  | { type: 'add'; sectionId: number; sectionName: string }
+  | { type: 'add'; sectionId: number; sectionName: string; position: number }
   | { type: 'edit'; member: Attendee; sectionId: number; teamAttendees: Attendee[] }
 
-function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove }: {
+function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, onOptimisticSkillUpdate }: {
   state: ModalState; onClose: () => void; onRefresh: () => void
   onQuickMove?: (uid: string, target: 'ลา' | 'สำรอง') => void
-  onOptimisticMove?: (uid: string, targetSectionId: number | null) => void
+  onOptimisticMove?: (uid: string, targetSectionId: number | null, newMember?: Attendee, newPosition?: number | null) => void
+  onOptimisticSkillUpdate?: (uid: string, skills: Skill[]) => void
 }) {
   // shared state
   const [tab, setTab] = useState<'pick' | 'new'>('pick')
@@ -92,12 +93,14 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove }:
     .filter((a) => !jobFilter || a.job === jobFilter)
 
   async function assignExisting(uid: string) {
-    onOptimisticMove?.(uid, state.sectionId)
+    const pos = state.type === 'add' ? state.position : null
+    const member = allAttendees.find((a) => a.uid === uid)
+    onOptimisticMove?.(uid, state.sectionId, member ? { ...member, sectionId: state.sectionId, position: pos } : undefined, pos)
     onClose()
     fetch(`/api/attendees/${uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sectionId: state.sectionId }),
-    }).then(() => onRefresh())
+      body: JSON.stringify({ sectionId: state.sectionId, position: pos }),
+    })
   }
 
   async function removeFromSection() {
@@ -106,8 +109,8 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove }:
     onClose()
     fetch(`/api/attendees/${state.member.uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sectionId: null }),
-    }).then(() => onRefresh())
+      body: JSON.stringify({ sectionId: null, position: null }),
+    })
   }
 
   async function toggleMemberTag(tag: string) {
@@ -130,7 +133,7 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove }:
     fetch(`/api/attendees/${state.member.uid}/tags`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tags }),
-    }).then(() => onRefresh())
+    })
   }
 
   async function confirmLeaderSwap() {
@@ -148,24 +151,25 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove }:
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tags: newTagsList }),
       }),
-    ]).then(() => onRefresh())
+    ])
   }
 
   async function swapMember(newUid: string) {
     if (state.type !== 'edit') return
+    const incomingMember = allAttendees.find((a) => a.uid === newUid)
     onOptimisticMove?.(state.member.uid, null)
-    onOptimisticMove?.(newUid, state.sectionId)
+    onOptimisticMove?.(newUid, state.sectionId, incomingMember ? { ...incomingMember, sectionId: state.sectionId, position: null } : undefined)
     onClose()
     Promise.all([
       fetch(`/api/attendees/${state.member.uid}/section`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sectionId: null }),
+        body: JSON.stringify({ sectionId: null, position: null }),
       }),
       fetch(`/api/attendees/${newUid}/section`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sectionId: state.sectionId }),
+        body: JSON.stringify({ sectionId: state.sectionId, position: null }),
       }),
-    ]).then(() => onRefresh())
+    ])
   }
 
   async function toggleMemberSkill(skill: Skill) {
@@ -173,17 +177,21 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove }:
     const uid = state.member.uid
     const has = memberSkills.some((s) => s.id === skill.id)
     if (has) {
-      setMemberSkills((prev) => prev.filter((s) => s.id !== skill.id))
+      const updated = memberSkills.filter((s) => s.id !== skill.id)
+      setMemberSkills(updated)
+      onOptimisticSkillUpdate?.(uid, updated)
       fetch(`/api/attendees/${uid}/skills`, {
         method: 'DELETE', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skillId: skill.id }),
-      }).then(() => onRefresh())
+      })
     } else {
-      setMemberSkills((prev) => [...prev, skill])
+      const updated = [...memberSkills, skill]
+      setMemberSkills(updated)
+      onOptimisticSkillUpdate?.(uid, updated)
       fetch(`/api/attendees/${uid}/skills`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ skillId: skill.id }),
-      }).then(() => onRefresh())
+      })
     }
   }
 
@@ -234,25 +242,38 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove }:
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.uid.trim() || !form.memberName.trim()) { setErr('กรุณาใส่ UID และชื่อ'); return }
+    const uid = form.uid.trim()
+    const memberName = form.memberName.trim()
+    if (!uid || !memberName) { setErr('กรุณาใส่ UID และชื่อ'); return }
     setSaving(true); setErr('')
     try {
       const res = await fetch('/api/attendees', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([{ uid: form.uid.trim(), memberName: form.memberName.trim(), job: form.job, tags: newTags }]),
+        body: JSON.stringify([{ uid, memberName, job: form.job, tags: newTags }]),
       })
       if (!res.ok) { setErr('UID ซ้ำหรือเกิดข้อผิดพลาด'); setSaving(false); return }
-      for (const skill of newSkills) {
-        await fetch(`/api/attendees/${form.uid}/skills`, {
+
+      // Optimistic: add new member to section immediately
+      const pos = state.type === 'add' ? state.position : null
+      const newMember: Attendee = {
+        uid, memberName, job: form.job, tags: newTags, skills: newSkills,
+        sectionId: state.sectionId, position: pos, attendance: null,
+      }
+      onOptimisticMove?.(uid, state.sectionId, newMember, pos)
+      onClose()
+
+      // Background: assign skills + section then sync
+      const tasks: Promise<unknown>[] = newSkills.map((skill) =>
+        fetch(`/api/attendees/${uid}/skills`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ skillId: skill.id }),
         })
-      }
-      await fetch(`/api/attendees/${form.uid}/section`, {
+      )
+      tasks.push(fetch(`/api/attendees/${uid}/section`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sectionId: state.sectionId }),
-      })
-      onRefresh(); onClose()
+        body: JSON.stringify({ sectionId: state.sectionId, position: pos }),
+      }))
+      Promise.all(tasks).then(() => onRefresh())
     } catch { setErr('เกิดข้อผิดพลาด') }
     setSaving(false)
   }
@@ -647,7 +668,7 @@ function SectionHeader({ section, adminMode, onRename }: {
 // ─── Zone Panel (shows all sections of a zone) ────────────────────────────────
 function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = false, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onRename }: {
   zone: Zone; adminMode: boolean; search: string; jobFilter?: string | null; compact?: boolean
-  onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
+  onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee, slotIdx?: number) => void
   onDragStart?: (uid: string, sectionId: number, position: number) => void
   onDropSection?: (sectionId: number, position: number) => void
   onSwap?: (targetUid: string, targetSectionId: number, targetPosition: number) => void
@@ -664,7 +685,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
         <Image src="/logo-4am.png" alt="4AM" width={28} height={28} className="object-contain" />
         <p className="text-xs font-bold text-white/60 uppercase tracking-widest">TACTICAL HUB — {zone.name.replace('Team', '')}</p>
       </div>
-      <div className={`flex gap-2 ${compact ? '' : 'flex-1 min-h-0'}`}>
+      <div className={`flex gap-2 ${compact ? 'flex-col sm:flex-row' : 'flex-1 min-h-0'}`}>
         {sections.map((sec) => {
           // build slot map: slot index 0..CAPACITY-1 → member
           const slotMap = new Map<number, Attendee>()
@@ -707,7 +728,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
                       />
                   ) : (
                     <EmptySlot key={`empty-${slotIdx}`} adminMode={adminMode}
-                      onClick={() => onSlotClick(sec, 'add')}
+                      onClick={() => onSlotClick(sec, 'add', undefined, slotIdx)}
                       onDrop={() => onDropSection?.(sec.id, slotIdx)} />
                   )
                 })
@@ -723,7 +744,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
 // ─── Special Zone Panel (ลา / สำรอง) ─────────────────────────────────────────
 function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlotClick, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId }: {
   label: string; sections: Section[]; adminMode: boolean; search: string; jobFilter?: string | null
-  onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee) => void
+  onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee, slotIdx?: number) => void
   onDragStart?: (uid: string, sectionId: number, position: number) => void
   onDropSection?: (sectionId: number, position: number) => void
   onSwap?: (targetUid: string, targetSectionId: number, targetPosition: number) => void
@@ -781,8 +802,10 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
   const g = parseInt(color.slice(3, 5), 16)
   const b = parseInt(color.slice(5, 7), 16)
 
-  const visibleSkills = member.skills.slice(0, 6)
-  const hiddenSkills = member.skills.slice(6)
+  const visibleSkillsMobile = member.skills.slice(0, 4)
+  const hiddenSkillsMobile = member.skills.slice(4)
+  const visibleSkillsDesktop = member.skills.slice(0, 6)
+  const hiddenSkillsDesktop = member.skills.slice(6)
 
   return (
     <div
@@ -790,16 +813,15 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
       onDragStart={adminMode ? (e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.(member.uid) } : undefined}
       onDragOver={adminMode ? (e) => { e.preventDefault(); setIsDragOver(true) } : undefined}
       onDragLeave={adminMode ? () => setIsDragOver(false) : undefined}
-      onDrop={adminMode ? (e) => { e.preventDefault(); setIsDragOver(false); onDropOnMember?.(member.uid) } : undefined}
+      onDrop={adminMode ? (e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); onDropOnMember?.(member.uid) } : undefined}
       onClick={adminMode ? onClick : undefined}
-      className={`relative rounded-xl overflow-hidden transition-all ${adminMode ? 'cursor-grab active:cursor-grabbing hover:brightness-110' : ''} ${isDragOver ? 'ring-2 ring-yellow-400 brightness-125' : ''}`}
+      className={`relative rounded-xl overflow-hidden transition-all h-[90px] sm:h-[110px] ${adminMode ? 'cursor-grab active:cursor-grabbing hover:brightness-110' : ''} ${isDragOver ? 'ring-2 ring-yellow-400 brightness-125' : ''}`}
       style={{
         borderWidth: 2,
         borderStyle: 'solid',
         borderColor,
         background: `rgba(${r},${g},${b},0.12)`,
         boxShadow: isLeader ? `0 0 14px rgba(245,158,11,0.35)` : `0 2px 8px rgba(0,0,0,0.4)`,
-        height: '110px',
       }}>
 
       {adminMode && <div className="absolute top-1.5 right-1.5 text-white/25 text-xs z-10">✎</div>}
@@ -807,41 +829,56 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
       {/* Layout: icon | name+job | skills */}
       <div className="relative z-10 h-full flex items-center overflow-hidden">
 
-        {/* Left: job icon */}
-        <div className="shrink-0 flex items-center justify-center" style={{ width: 72 }}>
+        {/* Left: job icon — compact on < xl */}
+        <div className="shrink-0 flex items-center justify-center w-10 xl:w-[72px]">
           {JOB_ICON[member.job] && (
             <img src={JOB_ICON[member.job]} alt={member.job}
-              className="object-contain"
-              style={{ width: 56, height: 56 }} />
+              className="object-contain w-8 h-8 xl:w-14 xl:h-14" />
           )}
         </div>
 
         {/* Center: name + job */}
         <div className="flex-1 flex flex-col justify-center gap-0.5 min-w-0">
           <div className="flex items-center gap-1">
-            {isLeader && <span className="text-yellow-400 text-sm">👑</span>}
-            <p className="font-bold leading-tight truncate" style={{ color: '#ffffff', fontSize: '1rem' }}>{member.memberName}</p>
+            {isLeader && <span className="text-yellow-400 text-xs">👑</span>}
+            <p className="font-bold leading-tight truncate text-xs xl:text-base" style={{ color: '#ffffff' }}>{member.memberName}</p>
           </div>
-          <p className="text-xs font-black uppercase tracking-widest" style={{ color }}>{member.job}</p>
+          <p className="text-[9px] xl:text-xs font-black uppercase tracking-widest truncate" style={{ color }}>{member.job}</p>
         </div>
 
-        {/* Right: skills grid */}
-        <div className="shrink-0 flex items-center justify-center pr-3">
+        {/* Right: skills — < xl: 1 แถวนอน 4 อัน | xl+: 2 col 6 อัน */}
+        <div className="shrink-0 flex items-center justify-center pr-1.5 xl:pr-3">
           {member.skills.length > 0 && (
-            <div className="flex items-center gap-1">
-              <div className="grid grid-cols-2 gap-1" style={{ width: 70 }}>
-                {visibleSkills.map((s) => (
-                  <Image key={s.id} src={s.imagePath} alt="skill" width={32} height={32} className="rounded-full object-cover w-full h-auto aspect-square" />
-                ))}
+            <>
+              {/* Mobile + Tablet (< xl) */}
+              <div className="flex xl:hidden items-center gap-0.5">
+                <div className="flex flex-row gap-0.5">
+                  {visibleSkillsMobile.map((s) => (
+                    <Image key={s.id} src={s.imagePath} alt="skill" width={28} height={28} className="rounded-full object-cover" style={{ width: 28, height: 28 }} />
+                  ))}
+                </div>
+                {hiddenSkillsMobile.length > 0 && (
+                  <button onClick={(e) => { e.stopPropagation(); setShowSkillTooltip(true) }}
+                    className="w-6 h-6 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white text-[10px] font-bold hover:bg-white/30 transition-colors shrink-0">
+                    +{hiddenSkillsMobile.length}
+                  </button>
+                )}
               </div>
-              {hiddenSkills.length > 0 && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowSkillTooltip(true) }}
-                  className="w-7 h-7 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white text-xs font-bold hover:bg-white/30 transition-colors shrink-0">
-                  +{hiddenSkills.length}
-                </button>
-              )}
-            </div>
+              {/* Desktop (xl+) */}
+              <div className="hidden xl:flex items-center gap-1">
+                <div className="grid grid-cols-2 gap-1" style={{ width: 76 }}>
+                  {visibleSkillsDesktop.map((s) => (
+                    <Image key={s.id} src={s.imagePath} alt="skill" width={36} height={36} className="rounded-full object-cover w-full h-auto aspect-square" />
+                  ))}
+                </div>
+                {hiddenSkillsDesktop.length > 0 && (
+                  <button onClick={(e) => { e.stopPropagation(); setShowSkillTooltip(true) }}
+                    className="w-7 h-7 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white text-xs font-bold hover:bg-white/30 transition-colors shrink-0">
+                    +{hiddenSkillsDesktop.length}
+                  </button>
+                )}
+              </div>
+            </>
           )}
         </div>
 
@@ -881,14 +918,14 @@ function EmptySlot({ adminMode, onClick, onDrop }: { adminMode: boolean; onClick
       onDragOver={adminMode ? (e) => { e.preventDefault(); setIsDragOver(true) } : undefined}
       onDragLeave={adminMode ? () => setIsDragOver(false) : undefined}
       onDrop={adminMode ? (e) => { e.preventDefault(); setIsDragOver(false); onDrop?.() } : undefined}
-      className={`rounded-xl border-2 border-dashed text-center transition-all flex flex-col items-center justify-center ${
+      className={`rounded-xl border-2 border-dashed text-center transition-all flex flex-col items-center justify-center h-[90px] sm:h-[110px] ${
         isDragOver && adminMode
           ? 'border-yellow-400 bg-yellow-400/15 scale-[1.02]'
           : adminMode
             ? 'border-blue-500/50 text-blue-400 hover:bg-blue-500/10 hover:border-blue-400 cursor-pointer'
             : 'border-white/10 text-white/20'
       }`}
-      style={{ backdropFilter: 'blur(4px)', background: isDragOver ? undefined : 'rgba(255,255,255,0.03)', height: '110px' }}>
+      style={{ backdropFilter: 'blur(4px)', background: isDragOver ? undefined : 'rgba(255,255,255,0.03)' }}>
       {adminMode ? (
         <>
           <p className="text-2xl font-light leading-none mb-0.5">{isDragOver ? '↓' : '+'}</p>
@@ -967,12 +1004,12 @@ export default function Home() {
   async function handleDrop(targetSectionId: number, position?: number) {
     if (!dragged) return
     const uid = dragged.uid
-    optimisticMoveAttendee(uid, targetSectionId)
+    optimisticMoveAttendee(uid, targetSectionId, undefined, position ?? null)
     setDragged(null)
     fetch(`/api/attendees/${uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sectionId: targetSectionId, position: position ?? null }),
-    }).then(() => load())
+    })
   }
 
   async function handleRename(sectionId: number, name: string) {
@@ -983,7 +1020,7 @@ export default function Home() {
     fetch(`/api/sections/${sectionId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
-    }).then(() => load())
+    })
   }
 
   async function handleQuickMove(uid: string, target: 'ลา' | 'สำรอง') {
@@ -993,7 +1030,7 @@ export default function Home() {
     fetch(`/api/attendees/${uid}/section`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sectionId: targetSection.id, position: null }),
-    }).then(() => load())
+    })
   }
 
   async function handleSwap(targetUid: string, targetSectionId: number, targetPosition: number | null) {
@@ -1010,7 +1047,7 @@ export default function Home() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sectionId, position }),
       }),
-    ]).then(() => load())
+    ])
   }
 
   async function load() {
@@ -1019,56 +1056,63 @@ export default function Home() {
     setZones(data.zones)
   }
 
-  function optimisticMoveAttendee(uid: string, targetSectionId: number | null) {
+  function optimisticMoveAttendee(uid: string, targetSectionId: number | null, newMember?: Attendee, newPosition?: number | null) {
     setZones((prev) => {
-      let attendee: Attendee | undefined
-      for (const z of prev)
-        for (const s of z.sections) {
-          const f = s.attendees.find((a) => a.uid === uid)
-          if (f) { attendee = f; break }
-          if (attendee) break
-        }
+      let attendee: Attendee | undefined = newMember
+      if (!attendee) {
+        for (const z of prev)
+          for (const s of z.sections) {
+            const f = s.attendees.find((a) => a.uid === uid)
+            if (f) { attendee = f; break }
+          }
+      }
       if (!attendee) return prev
+      const updated = { ...attendee, sectionId: targetSectionId, position: newPosition !== undefined ? newPosition : attendee.position }
       return prev.map((z) => ({
         ...z,
         sections: z.sections.map((s) => {
-          if (s.attendees.some((a) => a.uid === uid))
-            return { ...s, attendees: s.attendees.filter((a) => a.uid !== uid) }
-          if (targetSectionId !== null && s.id === targetSectionId)
-            return { ...s, attendees: [...s.attendees, { ...attendee!, sectionId: targetSectionId }] }
+          const hasMember = s.attendees.some((a) => a.uid === uid)
+          const isTarget = targetSectionId !== null && s.id === targetSectionId
+          if (hasMember && isTarget) {
+            // ย้ายใน section เดียวกัน — อัพเดท position ใหม่
+            return { ...s, attendees: s.attendees.map((a) => a.uid === uid ? updated : a) }
+          }
+          if (hasMember) return { ...s, attendees: s.attendees.filter((a) => a.uid !== uid) }
+          if (isTarget) return { ...s, attendees: [...s.attendees, updated] }
           return s
         }),
       }))
     })
   }
 
+  function optimisticSkillUpdate(uid: string, skills: Skill[]) {
+    setZones((prev) => prev.map((z) => ({
+      ...z,
+      sections: z.sections.map((s) => ({
+        ...s,
+        attendees: s.attendees.map((a) => a.uid === uid ? { ...a, skills } : a),
+      })),
+    })))
+  }
+
   function optimisticSwapAttendees(uid1: string, sec1: number | null, pos1: number | null, uid2: string, sec2: number | null, pos2: number | null) {
-    setZones((prev) => {
-      const findAttendee = (uid: string) => {
-        for (const z of prev)
-          for (const s of z.sections) {
-            const f = s.attendees.find((a) => a.uid === uid)
-            if (f) return f
-          }
-      }
-      const a1 = findAttendee(uid1)
-      const a2 = findAttendee(uid2)
-      if (!a1 || !a2) return prev
-      return prev.map((z) => ({
-        ...z,
-        sections: z.sections.map((s) => ({
-          ...s,
-          attendees: s.attendees.map((a) => {
-            if (a.uid === uid1) return { ...a2, sectionId: sec1, position: pos1 }
-            if (a.uid === uid2) return { ...a1, sectionId: sec2, position: pos2 }
-            return a
-          }),
-        })),
-      }))
-    })
+    setZones((prev) => prev.map((z) => ({
+      ...z,
+      sections: z.sections.map((s) => ({
+        ...s,
+        attendees: s.attendees.map((a) => {
+          if (a.uid === uid1) return { ...a, sectionId: sec1, position: pos1 }
+          if (a.uid === uid2) return { ...a, sectionId: sec2, position: pos2 }
+          return a
+        }),
+      })),
+    })))
   }
   useEffect(() => {
     load()
+    const interval = setInterval(load, 30000)
+    const onFocus = () => load()
+    window.addEventListener('focus', onFocus)
     try {
       const stored = localStorage.getItem('adminSession')
       if (stored) {
@@ -1077,6 +1121,7 @@ export default function Home() {
         else localStorage.removeItem('adminSession')
       }
     } catch { /* ignore */ }
+    return () => { clearInterval(interval); window.removeEventListener('focus', onFocus) }
   }, [])
 
   async function handleAdminToggle() {
@@ -1102,14 +1147,13 @@ export default function Home() {
 
   function zoneOf(name: string) { return zones.find((z) => z.name === name) }
 
-  function openSlotModal(section: Section, type: 'add' | 'edit', member?: Attendee) {
+  function openSlotModal(section: Section, type: 'add' | 'edit', member?: Attendee, slotIdx?: number) {
     if (!adminMode) return
     if (type === 'edit' && member) {
-      // collect attendees in the same section only
       const teamAttendees = section.attendees
       setSlotModal({ type: 'edit', member, sectionId: section.id, teamAttendees })
     } else {
-      setSlotModal({ type: 'add', sectionId: section.id, sectionName: section.name })
+      setSlotModal({ type: 'add', sectionId: section.id, sectionName: section.name, position: slotIdx ?? 0 })
     }
   }
 
@@ -1150,10 +1194,10 @@ export default function Home() {
         {/* Top bar */}
         <div className="flex flex-col gap-2">
           {/* Tabs row — centered */}
-          <div className="flex items-center justify-center gap-2 flex-wrap">
+          <div className="flex items-center justify-center gap-1.5 flex-wrap">
             {TABS.map((t) => (
               <button key={t} onClick={() => setView(t)}
-                className={`px-5 py-2 rounded-full text-sm font-semibold border transition-colors backdrop-blur flex items-center gap-1.5 ${view === t ? (TAB_ACTIVE[t] ?? 'bg-white/20 text-white border-white/30') : (TAB_INACTIVE[t] ?? 'bg-black/30 text-gray-300 border-white/10 hover:bg-white/10')}`}>
+                className={`px-3 py-1.5 sm:px-5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold border transition-colors backdrop-blur flex items-center gap-1.5 ${view === t ? (TAB_ACTIVE[t] ?? 'bg-white/20 text-white border-white/30') : (TAB_INACTIVE[t] ?? 'bg-black/30 text-gray-300 border-white/10 hover:bg-white/10')}`}>
                 {t}
                 {t === 'ลา' && laCount > 0 && <span className={`text-xs font-bold px-1.5 py-0 rounded-full leading-none ${view === 'ลา' ? 'bg-white/30' : 'bg-red-500 text-white'}`}>{laCount}</span>}
                 {t === 'สำรอง' && sarongCount > 0 && <span className={`text-xs font-bold px-1.5 py-0 rounded-full leading-none ${view === 'สำรอง' ? 'bg-white/30' : 'bg-yellow-500 text-black'}`}>{sarongCount}</span>}
@@ -1162,7 +1206,7 @@ export default function Home() {
           </div>
 
           {/* Controls row */}
-          <div className="flex items-center justify-center gap-2 flex-wrap">
+          <div className="flex items-center justify-center gap-1.5 flex-wrap">
             {/* Search */}
             <div className="relative flex-1 max-w-xs">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
@@ -1216,7 +1260,7 @@ export default function Home() {
                 dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} />
             ))}
             {/* สำรอง + ลา แนวนอน */}
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               {(['สำรอง', 'ลา'] as const).map((label) => {
                 const secs = zones.flatMap((z) => z.sections.filter((s) => s.name === label))
                 return (
@@ -1230,7 +1274,7 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 min-h-0 flex gap-2">
+          <div className="flex-1 min-h-0 flex flex-col sm:flex-row gap-2">
             {/* Team zones */}
             {teamZones.map((zone) => (
               <div key={zone.id} className="flex-1 min-w-0 overflow-y-auto">
@@ -1253,7 +1297,7 @@ export default function Home() {
 
       {/* Slot Modal */}
       {slotModal && (
-        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} onOptimisticMove={optimisticMoveAttendee} />
+        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} onOptimisticMove={optimisticMoveAttendee} onOptimisticSkillUpdate={optimisticSkillUpdate} />
       )}
 
       {/* Password Modal */}
