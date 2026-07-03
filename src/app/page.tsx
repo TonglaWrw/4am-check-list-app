@@ -18,13 +18,13 @@ const JOB_COLOR: Record<string, string> = {
   NIGHTWAKER: '#06b6d4', NUMINA: '#a855f7', SYLPH: '#ec4899', DRAGONSVELTE: '#22c55e',
 }
 const JOB_ICON: Record<string, string> = {
-  IRONCLAD: 'https://cdn.discordapp.com/emojis/1497898275871789166.png',
-  SYLPH: 'https://cdn.discordapp.com/emojis/1497905719146709185.png',
-  NUMINA: 'https://cdn.discordapp.com/emojis/1489512270202535987.png',
-  BLOODSTORM: 'https://cdn.discordapp.com/emojis/1489501000652820510.png',
-  NIGHTWAKER: 'https://cdn.discordapp.com/emojis/1497905458139107429.png',
-  CELESTUNE: 'https://cdn.discordapp.com/emojis/1489508116403060846.png',
-  DRAGONSVELTE: 'https://cdn.discordapp.com/emojis/1489508543307583488.png',
+  IRONCLAD: '/jobs/ironclad.png',
+  SYLPH: '/jobs/sylph.png',
+  NUMINA: '/jobs/numina.png',
+  BLOODSTORM: '/jobs/bloodstorm.png',
+  NIGHTWAKER: '/jobs/nightwaker.png',
+  CELESTUNE: '/jobs/celestune.png',
+  DRAGONSVELTE: '/jobs/dragonsvelte.png',
 }
 function jobColor(job: string) { return JOB_COLOR[job] ?? '#6b7280' }
 const SPECIAL = ['ลา', 'สำรอง']
@@ -49,11 +49,12 @@ type ModalState =
   | { type: 'add'; sectionId: number; sectionName: string; position: number }
   | { type: 'edit'; member: Attendee; sectionId: number; teamAttendees: Attendee[] }
 
-function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, onOptimisticSkillUpdate }: {
+function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, onOptimisticSkillUpdate, onOptimisticNameUpdate }: {
   state: ModalState; onClose: () => void; onRefresh: () => void
   onQuickMove?: (uid: string, target: 'ลา' | 'สำรอง') => void
   onOptimisticMove?: (uid: string, targetSectionId: number | null, newMember?: Attendee, newPosition?: number | null) => void
   onOptimisticSkillUpdate?: (uid: string, skills: Skill[]) => void
+  onOptimisticNameUpdate?: (uid: string, memberName: string) => void
 }) {
   // shared state
   const [tab, setTab] = useState<'pick' | 'new'>('pick')
@@ -77,8 +78,26 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, o
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const [leaderConflict, setLeaderConflict] = useState<Attendee | null>(null)
+  // edit member name
+  const [editingName, setEditingName] = useState(false)
+  const [nameValue, setNameValue] = useState(state.type === 'edit' ? state.member.memberName : '')
+  const [savedName, setSavedName] = useState(state.type === 'edit' ? state.member.memberName : '')
   const fileRef = useRef<HTMLInputElement>(null)
   const editFileRef = useRef<HTMLInputElement>(null)
+
+  function saveName() {
+    if (state.type !== 'edit') return
+    setEditingName(false)
+    const trimmed = nameValue.trim()
+    if (!trimmed || trimmed === savedName) { setNameValue(savedName); return }
+    setSavedName(trimmed)
+    setNameValue(trimmed)
+    onOptimisticNameUpdate?.(state.member.uid, trimmed)
+    fetch(`/api/attendees/${state.member.uid}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberName: trimmed }),
+    })
+  }
 
   useEffect(() => {
     Promise.all([
@@ -287,7 +306,18 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, o
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               {m.tags?.includes('หัวหน้าทีม') && <span className="text-yellow-500">👑</span>}
-              <h2 className="text-lg font-bold text-white">{m.memberName}</h2>
+              {editingName ? (
+                <input value={nameValue} onChange={(e) => setNameValue(e.target.value)} autoFocus
+                  onBlur={saveName}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') { setEditingName(false); setNameValue(savedName) } }}
+                  className="text-lg font-bold text-white bg-white/10 border border-blue-400 rounded-lg px-2 py-0.5 outline-none min-w-0 flex-1" />
+              ) : (
+                <>
+                  <h2 className="text-lg font-bold text-white cursor-pointer hover:text-blue-300 transition-colors" onClick={() => setEditingName(true)}>{savedName}</h2>
+                  <button onClick={() => setEditingName(true)} title="แก้ไขชื่อ"
+                    className="text-white/30 hover:text-blue-300 text-sm transition-colors">✎</button>
+                </>
+              )}
             </div>
             <div className="flex items-center gap-1">
               {JOB_ICON[m.job] && <img src={JOB_ICON[m.job]} alt={m.job} width={16} height={16} className="object-contain" />}
@@ -621,8 +651,9 @@ function CompactEmptySlot({ adminMode, onClick }: { adminMode: boolean; onClick:
 }
 
 // ─── Section Header (inline editable in admin mode) ──────────────────────────
-function SectionHeader({ section, adminMode, onRename }: {
+function SectionHeader({ section, adminMode, onRename, onClear }: {
   section: Section; adminMode: boolean; onRename?: (id: number, name: string) => void
+  onClear?: (section: Section) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(section.name)
@@ -661,12 +692,18 @@ function SectionHeader({ section, adminMode, onRename }: {
         </>
       )}
       <span className="text-white/30 text-xs shrink-0">({section.attendees.length})</span>
+      {adminMode && onClear && section.attendees.length > 0 && !editing && (
+        <button type="button" onClick={() => onClear(section)} title={`ล้างสมาชิกทั้งหมดใน ${section.name}`}
+          className="shrink-0 flex items-center gap-1 bg-white text-red-600 hover:bg-red-500 hover:text-white rounded-full px-3 py-1 text-sm font-bold shadow-md transition-colors leading-none">
+          🗑 ล้าง
+        </button>
+      )}
     </div>
   )
 }
 
 // ─── Zone Panel (shows all sections of a zone) ────────────────────────────────
-function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = false, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onRename }: {
+function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = false, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onRename, onClear }: {
   zone: Zone; adminMode: boolean; search: string; jobFilter?: string | null; compact?: boolean
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee, slotIdx?: number) => void
   onDragStart?: (uid: string, sectionId: number, position: number) => void
@@ -675,6 +712,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
   dragOverSectionId?: number | null
   setDragOverSectionId?: (id: number | null) => void
   onRename?: (id: number, name: string) => void
+  onClear?: (section: Section) => void
 }) {
   const q = search.trim().toLowerCase()
   const sections = zone.sections.filter((s) => !SPECIAL.includes(s.name))
@@ -683,7 +721,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
       style={{ background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(3px)' }}>
       <div className="flex items-center gap-2 shrink-0">
         <Image src="/logo-4am.png" alt="4AM" width={28} height={28} className="object-contain" />
-        <p className="text-xs font-bold text-white/60 uppercase tracking-widest">TACTICAL HUB — {zone.name.replace('Team', '')}</p>
+        <p className="text-lg sm:text-xl font-black text-white uppercase tracking-widest">RAID — {zone.name.replace('Team', '')}</p>
       </div>
       <div className={`flex gap-2 ${compact ? 'flex-col sm:flex-row' : 'flex-1 min-h-0'}`}>
         {sections.map((sec) => {
@@ -704,7 +742,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
           return (
             <div key={sec.id}
               className={`flex-1 flex flex-col gap-1.5 min-w-0 rounded-lg transition-colors ${compact ? '' : 'overflow-y-auto'}`}>
-              <SectionHeader section={sec} adminMode={adminMode} onRename={onRename} />
+              <SectionHeader section={sec} adminMode={adminMode} onRename={onRename} onClear={onClear} />
               {(q || jobFilter) ? (
                 // search/filter mode: show matching members only
                 sec.attendees
@@ -742,7 +780,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
 }
 
 // ─── Special Zone Panel (ลา / สำรอง) ─────────────────────────────────────────
-function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlotClick, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId }: {
+function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlotClick, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onClear }: {
   label: string; sections: Section[]; adminMode: boolean; search: string; jobFilter?: string | null
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee, slotIdx?: number) => void
   onDragStart?: (uid: string, sectionId: number, position: number) => void
@@ -750,6 +788,7 @@ function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlo
   onSwap?: (targetUid: string, targetSectionId: number, targetPosition: number) => void
   dragOverSectionId?: number | null
   setDragOverSectionId?: (id: number | null) => void
+  onClear?: () => void
 }) {
   const q = search.trim().toLowerCase()
   const allMembers = sections.flatMap((s) =>
@@ -765,7 +804,13 @@ function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlo
       style={{ background: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(3px)' }}>
       <div className="flex items-center gap-2 shrink-0">
         <Image src="/logo-4am.png" alt="4AM" width={28} height={28} className="object-contain" />
-        <p className="text-xs font-bold text-white/60 uppercase tracking-widest">TACTICAL HUB — {label} <span className="text-white/30 font-normal normal-case">({allMembers.length})</span></p>
+        <p className="text-lg sm:text-xl font-black text-white uppercase tracking-widest">{label} <span className="text-white/30 font-normal normal-case">({allMembers.length})</span></p>
+        {adminMode && onClear && allMembers.length > 0 && (
+          <button type="button" onClick={onClear} title={`ล้างสมาชิกทั้งหมดใน ${label}`}
+            className="shrink-0 flex items-center gap-1 bg-white text-red-600 hover:bg-red-500 hover:text-white rounded-full px-3 py-1 text-sm font-bold shadow-md transition-colors leading-none">
+            🗑 ล้าง
+          </button>
+        )}
       </div>
       <div className={`flex-1 overflow-y-auto flex flex-col gap-1.5 rounded-lg transition-colors ${isOver && adminMode ? 'bg-blue-500/15 ring-2 ring-blue-400/50' : ''}`}
         onDragOver={adminMode && sec ? (e) => { e.preventDefault(); setDragOverSectionId?.(sec.id) } : undefined}
@@ -980,18 +1025,27 @@ export default function Home() {
   const [pwError, setPwError] = useState('')
   const [search, setSearch] = useState('')
   const [slotModal, setSlotModal] = useState<ModalState | null>(null)
+  const [clearTarget, setClearTarget] = useState<{ label: string; sections: Section[] } | null>(null)
   const [dragged, setDragged] = useState<{ uid: string; sectionId: number | null; position: number | null } | null>(null)
   const [dragOverSectionId, setDragOverSectionId] = useState<number | null>(null)
   const [pageJobFilter, setPageJobFilter] = useState<string | null>(null)
   const [capturing, setCapturing] = useState(false)
+  const [captureProgress, setCaptureProgress] = useState(0)
   const captureRef = useRef<HTMLDivElement>(null)
 
   async function handleCapture() {
     if (!captureRef.current) return
     setCapturing(true)
+    setCaptureProgress(0)
     try {
+      // รอให้ React render มุมมอง user ธรรมดา (ซ่อนปุ่ม admin) ก่อนถ่ายภาพ
+      await new Promise((r) => setTimeout(r, 100))
       const { domToPng } = await import('modern-screenshot')
-      const dataUrl = await domToPng(captureRef.current, { scale: 2 })
+      const dataUrl = await domToPng(captureRef.current, {
+        scale: 2,
+        timeout: 8000, // รูปไหนโหลดค้างให้ข้าม ไม่ต้องรอถึง 30 วิ
+        progress: (current, total) => setCaptureProgress(Math.round((current / total) * 100)),
+      })
       const link = document.createElement('a')
       link.download = `checklist-${new Date().toISOString().slice(0, 16).replace('T', '_')}.png`
       link.href = dataUrl
@@ -1010,6 +1064,16 @@ export default function Home() {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sectionId: targetSectionId, position: position ?? null }),
     })
+  }
+
+  async function handleClearSections(target: { label: string; sections: Section[] }) {
+    setClearTarget(null)
+    const ids = new Set(target.sections.map((s) => s.id))
+    setZones((prev) => prev.map((z) => ({
+      ...z,
+      sections: z.sections.map((s) => ids.has(s.id) ? { ...s, attendees: [] } : s),
+    })))
+    for (const s of target.sections) fetch(`/api/sections/${s.id}`, { method: 'DELETE' })
   }
 
   async function handleRename(sectionId: number, name: string) {
@@ -1083,6 +1147,16 @@ export default function Home() {
         }),
       }))
     })
+  }
+
+  function optimisticNameUpdate(uid: string, memberName: string) {
+    setZones((prev) => prev.map((z) => ({
+      ...z,
+      sections: z.sections.map((s) => ({
+        ...s,
+        attendees: s.attendees.map((a) => a.uid === uid ? { ...a, memberName } : a),
+      })),
+    })))
   }
 
   function optimisticSkillUpdate(uid: string, skills: Skill[]) {
@@ -1245,7 +1319,7 @@ export default function Home() {
             {/* Capture button */}
             <button onClick={handleCapture} disabled={capturing}
               className="px-3 py-1 rounded-full text-xs font-medium border border-white/20 bg-black/30 text-gray-300 hover:border-green-400 hover:text-green-300 transition-colors backdrop-blur disabled:opacity-50">
-              {capturing ? '⏳' : '📷'} Capture
+              {capturing ? `⏳ ${captureProgress}%` : '📷 Capture'}
             </button>
           </div>
         </div>
@@ -1255,9 +1329,9 @@ export default function Home() {
           <div className="flex flex-col gap-3">
             {/* TeamA, TeamB, TeamC แนวตั้ง */}
             {teamZones.map((zone) => (
-              <ZonePanel key={zone.id} zone={zone} adminMode={adminMode} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal} compact
+              <ZonePanel key={zone.id} zone={zone} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal} compact
                 onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
-                dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} />
+                dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} onClear={(sec) => setClearTarget({ label: sec.name, sections: [sec] })} />
             ))}
             {/* สำรอง + ลา แนวนอน */}
             <div className="flex flex-col sm:flex-row gap-2">
@@ -1265,9 +1339,10 @@ export default function Home() {
                 const secs = zones.flatMap((z) => z.sections.filter((s) => s.name === label))
                 return (
                   <div key={label} className="flex-1 min-w-0">
-                    <SpecialZonePanel label={label} sections={secs} adminMode={adminMode} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
+                    <SpecialZonePanel label={label} sections={secs} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                       onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
-                      dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
+                      dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId}
+                      onClear={() => setClearTarget({ label, sections: secs })} />
                   </div>
                 )
               })}
@@ -1278,17 +1353,18 @@ export default function Home() {
             {/* Team zones */}
             {teamZones.map((zone) => (
               <div key={zone.id} className="flex-1 min-w-0 overflow-y-auto">
-                <ZonePanel zone={zone} adminMode={adminMode} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
+                <ZonePanel zone={zone} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                   onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
-                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} />
+                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} onClear={(sec) => setClearTarget({ label: sec.name, sections: [sec] })} />
               </div>
             ))}
             {/* Special view (ลา / สำรอง) */}
             {specialSections.length > 0 && (
               <div className="flex-1 min-w-0 overflow-y-auto">
-                <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
+                <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                   onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
-                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} />
+                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId}
+                  onClear={() => setClearTarget({ label: view as string, sections: specialSections })} />
               </div>
             )}
           </div>
@@ -1297,7 +1373,28 @@ export default function Home() {
 
       {/* Slot Modal */}
       {slotModal && (
-        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} onOptimisticMove={optimisticMoveAttendee} onOptimisticSkillUpdate={optimisticSkillUpdate} />
+        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} onOptimisticMove={optimisticMoveAttendee} onOptimisticSkillUpdate={optimisticSkillUpdate} onOptimisticNameUpdate={optimisticNameUpdate} />
+      )}
+
+      {/* Clear Section Confirmation */}
+      {clearTarget && (
+        <Modal onClose={() => setClearTarget(null)}>
+          <h2 className="text-lg font-bold text-white mb-1">🗑 ล้าง <span className="text-red-400">{clearTarget.label}</span></h2>
+          <p className="text-sm text-gray-400 mb-4">
+            ย้ายสมาชิกทั้งหมด <span className="text-white font-bold">{clearTarget.sections.reduce((n, s) => n + s.attendees.length, 0)} คน</span> ออกจาก {clearTarget.label}
+            (สมาชิกจะกลับไปอยู่ในรายชื่อที่ยังไม่ได้ assign — ข้อมูลสมาชิกไม่ถูกลบ)
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => handleClearSections(clearTarget)}
+              className="flex-1 bg-red-600 hover:bg-red-500 text-white rounded-lg py-2 text-sm font-semibold transition-colors">
+              ล้างเลย
+            </button>
+            <button onClick={() => setClearTarget(null)}
+              className="flex-1 bg-white/10 hover:bg-white/20 text-gray-300 rounded-lg py-2 text-sm transition-colors">
+              ยกเลิก
+            </button>
+          </div>
+        </Modal>
       )}
 
       {/* Password Modal */}

@@ -11,3 +11,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   })
   return NextResponse.json({ section })
 }
+
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const result = await prisma.attendee.updateMany({
+    where: { sectionId: Number(id) },
+    data: { sectionId: null, position: null },
+  })
+  return NextResponse.json({ cleared: result.count })
+}
