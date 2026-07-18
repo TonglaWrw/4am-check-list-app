@@ -12,10 +12,11 @@ type Attendee = {
 type Section = { id: number; name: string; attendees: Attendee[] }
 type Zone = { id: number; name: string; label: string; sections: Section[] }
 
-const JOBS = ['IRONCLAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE']
+const JOBS = ['IRONCLAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE', 'GUEST']
 const JOB_COLOR: Record<string, string> = {
   IRONCLAD: '#f59e0b', BLOODSTORM: '#ef4444', CELESTUNE: '#3b82f6',
   NIGHTWAKER: '#06b6d4', NUMINA: '#a855f7', SYLPH: '#ec4899', DRAGONSVELTE: '#22c55e',
+  GUEST: '#f97316',
 }
 const JOB_ICON: Record<string, string> = {
   IRONCLAD: '/jobs/ironclad.png',
@@ -49,12 +50,13 @@ type ModalState =
   | { type: 'add'; sectionId: number; sectionName: string; position: number }
   | { type: 'edit'; member: Attendee; sectionId: number; teamAttendees: Attendee[] }
 
-function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, onOptimisticSkillUpdate, onOptimisticNameUpdate }: {
+function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, onOptimisticSkillUpdate, onOptimisticNameUpdate, onOptimisticJobUpdate }: {
   state: ModalState; onClose: () => void; onRefresh: () => void
   onQuickMove?: (uid: string, target: 'ลา' | 'สำรอง') => void
   onOptimisticMove?: (uid: string, targetSectionId: number | null, newMember?: Attendee, newPosition?: number | null) => void
   onOptimisticSkillUpdate?: (uid: string, skills: Skill[]) => void
   onOptimisticNameUpdate?: (uid: string, memberName: string) => void
+  onOptimisticJobUpdate?: (uid: string, job: string) => void
 }) {
   // shared state
   const [tab, setTab] = useState<'pick' | 'new'>('pick')
@@ -82,6 +84,8 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, o
   const [editingName, setEditingName] = useState(false)
   const [nameValue, setNameValue] = useState(state.type === 'edit' ? state.member.memberName : '')
   const [savedName, setSavedName] = useState(state.type === 'edit' ? state.member.memberName : '')
+  // edit member job
+  const [jobValue, setJobValue] = useState(state.type === 'edit' ? state.member.job : JOBS[0])
   const fileRef = useRef<HTMLInputElement>(null)
   const editFileRef = useRef<HTMLInputElement>(null)
 
@@ -96,6 +100,16 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, o
     fetch(`/api/attendees/${state.member.uid}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ memberName: trimmed }),
+    })
+  }
+
+  function changeJob(job: string) {
+    if (state.type !== 'edit' || job === jobValue) return
+    setJobValue(job)
+    onOptimisticJobUpdate?.(state.member.uid, job)
+    fetch(`/api/attendees/${state.member.uid}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job }),
     })
   }
 
@@ -320,8 +334,14 @@ function SlotModal({ state, onClose, onRefresh, onQuickMove, onOptimisticMove, o
               )}
             </div>
             <div className="flex items-center gap-1">
-              {JOB_ICON[m.job] && <img src={JOB_ICON[m.job]} alt={m.job} width={16} height={16} className="object-contain" />}
-              <p className="text-sm font-semibold" style={{ color: jobColor(m.job) }}>{m.job}</p>
+              {JOB_ICON[jobValue] && <img src={JOB_ICON[jobValue]} alt={jobValue} width={16} height={16} className="object-contain" />}
+              <select value={jobValue} onChange={(e) => changeJob(e.target.value)}
+                className="text-sm font-semibold bg-black/30 border border-white/20 rounded-lg px-1.5 py-0.5 outline-none cursor-pointer hover:border-white/40 focus:border-blue-400 transition-colors"
+                style={{ color: jobColor(jobValue) }}>
+                {JOBS.map((j) => (
+                  <option key={j} value={j} style={{ color: jobColor(j), background: '#1a1a2e' }}>{j}</option>
+                ))}
+              </select>
             </div>
             <p className="text-xs text-gray-400 mt-0.5">UID: {m.uid}</p>
           </div>
@@ -703,7 +723,7 @@ function SectionHeader({ section, adminMode, onRename, onClear }: {
 }
 
 // ─── Zone Panel (shows all sections of a zone) ────────────────────────────────
-function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = false, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onRename, onClear }: {
+function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = false, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onRename, onClear, captureButton }: {
   zone: Zone; adminMode: boolean; search: string; jobFilter?: string | null; compact?: boolean
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee, slotIdx?: number) => void
   onDragStart?: (uid: string, sectionId: number, position: number) => void
@@ -713,6 +733,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
   setDragOverSectionId?: (id: number | null) => void
   onRename?: (id: number, name: string) => void
   onClear?: (section: Section) => void
+  captureButton?: React.ReactNode
 }) {
   const q = search.trim().toLowerCase()
   const sections = zone.sections.filter((s) => !SPECIAL.includes(s.name))
@@ -722,6 +743,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
       <div className="flex items-center gap-2 shrink-0">
         <Image src="/logo-4am.png" alt="4AM" width={28} height={28} className="object-contain" />
         <p className="text-lg sm:text-xl font-black text-white uppercase tracking-widest">RAID — {zone.name.replace('Team', '')}</p>
+        {captureButton}
       </div>
       <div className={`flex gap-2 ${compact ? 'flex-col sm:flex-row' : 'flex-1 min-h-0'}`}>
         {sections.map((sec) => {
@@ -780,7 +802,7 @@ function ZonePanel({ zone, adminMode, search, jobFilter, onSlotClick, compact = 
 }
 
 // ─── Special Zone Panel (ลา / สำรอง) ─────────────────────────────────────────
-function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlotClick, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onClear }: {
+function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlotClick, onDragStart, onDropSection, onSwap, dragOverSectionId, setDragOverSectionId, onClear, captureButton }: {
   label: string; sections: Section[]; adminMode: boolean; search: string; jobFilter?: string | null
   onSlotClick: (section: Section, type: 'add' | 'edit', member?: Attendee, slotIdx?: number) => void
   onDragStart?: (uid: string, sectionId: number, position: number) => void
@@ -789,6 +811,7 @@ function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlo
   dragOverSectionId?: number | null
   setDragOverSectionId?: (id: number | null) => void
   onClear?: () => void
+  captureButton?: React.ReactNode
 }) {
   const q = search.trim().toLowerCase()
   const allMembers = sections.flatMap((s) =>
@@ -805,6 +828,7 @@ function SpecialZonePanel({ label, sections, adminMode, search, jobFilter, onSlo
       <div className="flex items-center gap-2 shrink-0">
         <Image src="/logo-4am.png" alt="4AM" width={28} height={28} className="object-contain" />
         <p className="text-lg sm:text-xl font-black text-white uppercase tracking-widest">{label} <span className="text-white/30 font-normal normal-case">({allMembers.length})</span></p>
+        {captureButton}
         {adminMode && onClear && allMembers.length > 0 && (
           <button type="button" onClick={onClear} title={`ล้างสมาชิกทั้งหมดใน ${label}`}
             className="shrink-0 flex items-center gap-1 bg-white text-red-600 hover:bg-red-500 hover:text-white rounded-full px-3 py-1 text-sm font-bold shadow-md transition-colors leading-none">
@@ -849,8 +873,8 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
 
   const visibleSkillsMobile = member.skills.slice(0, 4)
   const hiddenSkillsMobile = member.skills.slice(4)
-  const visibleSkillsDesktop = member.skills.slice(0, 6)
-  const hiddenSkillsDesktop = member.skills.slice(6)
+  const visibleSkillsDesktop = member.skills.slice(0, 3)
+  const hiddenSkillsDesktop = member.skills.slice(3)
 
   return (
     <div
@@ -891,7 +915,7 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
           <p className="text-[9px] xl:text-xs font-black uppercase tracking-widest truncate" style={{ color }}>{member.job}</p>
         </div>
 
-        {/* Right: skills — < xl: 1 แถวนอน 4 อัน | xl+: 2 col 6 อัน */}
+        {/* Right: skills — < xl: 1 แถวนอน 4 อัน | xl+: 1 แถวนอน 3 อันใหญ่ */}
         <div className="shrink-0 flex items-center justify-center pr-1.5 xl:pr-3">
           {member.skills.length > 0 && (
             <>
@@ -910,10 +934,10 @@ function MemberCard({ member, adminMode, onClick, compact = false, onDragStart, 
                 )}
               </div>
               {/* Desktop (xl+) */}
-              <div className="hidden xl:flex items-center gap-1">
-                <div className="grid grid-cols-2 gap-1" style={{ width: 76 }}>
+              <div className="hidden xl:flex items-center gap-1.5">
+                <div className="flex flex-row gap-1.5">
                   {visibleSkillsDesktop.map((s) => (
-                    <Image key={s.id} src={s.imagePath} alt="skill" width={36} height={36} className="rounded-full object-cover w-full h-auto aspect-square" />
+                    <Image key={s.id} src={s.imagePath} alt="skill" width={56} height={56} className="rounded-full object-cover" style={{ width: 56, height: 56 }} />
                   ))}
                 </div>
                 {hiddenSkillsDesktop.length > 0 && (
@@ -1029,30 +1053,55 @@ export default function Home() {
   const [dragged, setDragged] = useState<{ uid: string; sectionId: number | null; position: number | null } | null>(null)
   const [dragOverSectionId, setDragOverSectionId] = useState<number | null>(null)
   const [pageJobFilter, setPageJobFilter] = useState<string | null>(null)
-  const [capturing, setCapturing] = useState(false)
+  const [capturing, setCapturing] = useState<string | null>(null)
   const [captureProgress, setCaptureProgress] = useState(0)
+  const [captureCopied, setCaptureCopied] = useState<string | null>(null)
   const captureRef = useRef<HTMLDivElement>(null)
+  const zoneRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
-  async function handleCapture() {
-    if (!captureRef.current) return
-    setCapturing(true)
+  async function handleCapture(targetName: string) {
+    // ถ่ายเฉพาะโซนที่เลือก ถ้าไม่แสดงอยู่ให้ถ่ายทั้งหน้า
+    const target = zoneRefs.current[targetName] ?? captureRef.current
+    if (!target) return
+    setCapturing(targetName)
     setCaptureProgress(0)
     try {
       // รอให้ React render มุมมอง user ธรรมดา (ซ่อนปุ่ม admin) ก่อนถ่ายภาพ
       await new Promise((r) => setTimeout(r, 100))
-      const { domToPng } = await import('modern-screenshot')
-      const dataUrl = await domToPng(captureRef.current, {
+      const { domToBlob } = await import('modern-screenshot')
+      const blob = await domToBlob(target, {
         scale: 2,
+        backgroundColor: '#1a1a2e',
         timeout: 8000, // รูปไหนโหลดค้างให้ข้าม ไม่ต้องรอถึง 30 วิ
         progress: (current, total) => setCaptureProgress(Math.round((current / total) * 100)),
       })
-      const link = document.createElement('a')
-      link.download = `checklist-${new Date().toISOString().slice(0, 16).replace('T', '_')}.png`
-      link.href = dataUrl
-      link.click()
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        setCaptureCopied(targetName)
+        setTimeout(() => setCaptureCopied(null), 2500)
+      } catch {
+        // clipboard ใช้ไม่ได้ (เบราว์เซอร์เก่า/ไม่ใช่ https) → โหลดไฟล์แทน
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.download = `checklist-${targetName}-${new Date().toISOString().slice(0, 16).replace('T', '_')}.png`
+        link.href = url
+        link.click()
+        URL.revokeObjectURL(url)
+      }
     } finally {
-      setCapturing(false)
+      setCapturing(null)
     }
+  }
+
+  // ปุ่ม capture ประจำหัวข้อแต่ละโซน — ซ่อนตอนกำลังถ่ายเพื่อไม่ให้ติดไปในรูป
+  function captureBtn(targetName: string) {
+    if (capturing) return null
+    return (
+      <button type="button" onClick={() => handleCapture(targetName)}
+        className={`shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium border transition-colors ${captureCopied === targetName ? 'border-green-400 text-green-300 bg-green-900/30' : 'border-white/20 bg-black/30 text-gray-300 hover:border-green-400 hover:text-green-300'}`}>
+        {captureCopied === targetName ? '✅ Copied!' : '📷 Capture'}
+      </button>
+    )
   }
 
   async function handleDrop(targetSectionId: number, position?: number) {
@@ -1155,6 +1204,16 @@ export default function Home() {
       sections: z.sections.map((s) => ({
         ...s,
         attendees: s.attendees.map((a) => a.uid === uid ? { ...a, memberName } : a),
+      })),
+    })))
+  }
+
+  function optimisticJobUpdate(uid: string, job: string) {
+    setZones((prev) => prev.map((z) => ({
+      ...z,
+      sections: z.sections.map((s) => ({
+        ...s,
+        attendees: s.attendees.map((a) => a.uid === uid ? { ...a, job } : a),
       })),
     })))
   }
@@ -1316,11 +1375,6 @@ export default function Home() {
               {adminMode ? '✎ Modify' : '✎ Modify'}
             </button>
 
-            {/* Capture button */}
-            <button onClick={handleCapture} disabled={capturing}
-              className="px-3 py-1 rounded-full text-xs font-medium border border-white/20 bg-black/30 text-gray-300 hover:border-green-400 hover:text-green-300 transition-colors backdrop-blur disabled:opacity-50">
-              {capturing ? `⏳ ${captureProgress}%` : '📷 Capture'}
-            </button>
           </div>
         </div>
 
@@ -1329,17 +1383,19 @@ export default function Home() {
           <div className="flex flex-col gap-3">
             {/* TeamA, TeamB, TeamC แนวตั้ง */}
             {teamZones.map((zone) => (
-              <ZonePanel key={zone.id} zone={zone} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal} compact
-                onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
-                dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} onClear={(sec) => setClearTarget({ label: sec.name, sections: [sec] })} />
+              <div key={zone.id} ref={(el) => { zoneRefs.current[zone.name] = el }}>
+                <ZonePanel zone={zone} captureButton={captureBtn(zone.name)} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal} compact
+                  onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
+                  dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} onClear={(sec) => setClearTarget({ label: sec.name, sections: [sec] })} />
+              </div>
             ))}
             {/* สำรอง + ลา แนวนอน */}
             <div className="flex flex-col sm:flex-row gap-2">
               {(['สำรอง', 'ลา'] as const).map((label) => {
                 const secs = zones.flatMap((z) => z.sections.filter((s) => s.name === label))
                 return (
-                  <div key={label} className="flex-1 min-w-0">
-                    <SpecialZonePanel label={label} sections={secs} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
+                  <div key={label} ref={(el) => { zoneRefs.current[label] = el }} className="flex-1 min-w-0">
+                    <SpecialZonePanel label={label} captureButton={captureBtn(label)} sections={secs} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                       onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                       dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId}
                       onClear={() => setClearTarget({ label, sections: secs })} />
@@ -1352,16 +1408,16 @@ export default function Home() {
           <div className="flex-1 min-h-0 flex flex-col sm:flex-row gap-2">
             {/* Team zones */}
             {teamZones.map((zone) => (
-              <div key={zone.id} className="flex-1 min-w-0 overflow-y-auto">
-                <ZonePanel zone={zone} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
+              <div key={zone.id} ref={(el) => { zoneRefs.current[zone.name] = el }} className="flex-1 min-w-0 overflow-y-auto">
+                <ZonePanel zone={zone} captureButton={captureBtn(zone.name)} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                   onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                   dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId} onRename={handleRename} onClear={(sec) => setClearTarget({ label: sec.name, sections: [sec] })} />
               </div>
             ))}
             {/* Special view (ลา / สำรอง) */}
             {specialSections.length > 0 && (
-              <div className="flex-1 min-w-0 overflow-y-auto">
-                <SpecialZonePanel label={view as string} sections={specialSections} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
+              <div ref={(el) => { zoneRefs.current[view] = el }} className="flex-1 min-w-0 overflow-y-auto">
+                <SpecialZonePanel label={view as string} captureButton={captureBtn(view)} sections={specialSections} adminMode={adminMode && !capturing} search={search} jobFilter={pageJobFilter} onSlotClick={openSlotModal}
                   onDragStart={(uid, sectionId, position) => setDragged({ uid, sectionId, position })} onDropSection={handleDrop} onSwap={handleSwap}
                   dragOverSectionId={dragOverSectionId} setDragOverSectionId={setDragOverSectionId}
                   onClear={() => setClearTarget({ label: view as string, sections: specialSections })} />
@@ -1371,9 +1427,16 @@ export default function Home() {
         )}
       </div>
 
+      {/* Capture progress toast */}
+      {capturing && (
+        <div className="fixed top-3 right-3 z-50 px-4 py-2 rounded-full text-sm font-semibold text-white bg-black/80 border border-green-400/50 backdrop-blur shadow-lg">
+          📷 กำลังถ่าย {capturing.startsWith('Team') ? capturing.slice(4) : capturing}... {captureProgress}%
+        </div>
+      )}
+
       {/* Slot Modal */}
       {slotModal && (
-        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} onOptimisticMove={optimisticMoveAttendee} onOptimisticSkillUpdate={optimisticSkillUpdate} onOptimisticNameUpdate={optimisticNameUpdate} />
+        <SlotModal state={slotModal} onClose={() => setSlotModal(null)} onRefresh={load} onQuickMove={handleQuickMove} onOptimisticMove={optimisticMoveAttendee} onOptimisticSkillUpdate={optimisticSkillUpdate} onOptimisticNameUpdate={optimisticNameUpdate} onOptimisticJobUpdate={optimisticJobUpdate} />
       )}
 
       {/* Clear Section Confirmation */}

@@ -8,7 +8,7 @@ type Attendee = { uid: string; memberName: string; job: string; sectionId: numbe
 
 const ALL_TAGS = ['อาวุธเทพ', 'หัวหน้าทีม']
 
-const JOBS = ['IRONCLAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE']
+const JOBS = ['IRONCLAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE', 'GUEST']
 
 function AdminContent() {
   const [skills, setSkills] = useState<Skill[]>([])
