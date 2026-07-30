@@ -12,6 +12,10 @@ export async function GET() {
             include: { skills: { include: { skill: true } } },
             orderBy: [{ position: 'asc' }, { memberName: 'asc' }],
           },
+          practiceAttendees: {
+            include: { skills: { include: { skill: true } } },
+            orderBy: [{ practicePosition: 'asc' }, { memberName: 'asc' }],
+          },
         },
       },
     },
@@ -19,13 +23,18 @@ export async function GET() {
   return NextResponse.json({
     zones: zones.map((z) => ({
       ...z,
-      sections: z.sections.map((s) => ({
-        ...s,
-        attendees: s.attendees.map((a) => ({
-          ...a,
-          skills: a.skills.map((as) => as.skill),
-        })),
-      })),
+      sections: z.sections.map((s) => {
+        const rows = z.isPractice ? s.practiceAttendees : s.attendees
+        return {
+          ...s,
+          attendees: rows.map((a) => ({
+            ...a,
+            sectionId: z.isPractice ? a.practiceSectionId : a.sectionId,
+            position: z.isPractice ? a.practicePosition : a.position,
+            skills: a.skills.map((as) => as.skill),
+          })),
+        }
+      }),
     })),
   })
 }
