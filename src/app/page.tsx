@@ -12,9 +12,9 @@ type Attendee = {
 type Section = { id: number; name: string; attendees: Attendee[] }
 type Zone = { id: number; name: string; label: string; sections: Section[] }
 
-const JOBS = ['IRONCLAD', 'BLOODSTORM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE', 'GUEST']
+const JOBS = ['IRONCLAD', 'BLOODSTROM', 'CELESTUNE', 'NIGHTWAKER', 'NUMINA', 'SYLPH', 'DRAGONSVELTE', 'GUEST']
 const JOB_COLOR: Record<string, string> = {
-  IRONCLAD: '#f59e0b', BLOODSTORM: '#ef4444', CELESTUNE: '#3b82f6',
+  IRONCLAD: '#f59e0b', BLOODSTROM: '#ef4444', CELESTUNE: '#3b82f6',
   NIGHTWAKER: '#06b6d4', NUMINA: '#a855f7', SYLPH: '#ec4899', DRAGONSVELTE: '#22c55e',
   GUEST: '#f97316',
 }
@@ -22,7 +22,7 @@ const JOB_ICON: Record<string, string> = {
   IRONCLAD: '/jobs/ironclad.png',
   SYLPH: '/jobs/sylph.png',
   NUMINA: '/jobs/numina.png',
-  BLOODSTORM: '/jobs/bloodstorm.png',
+  BLOODSTROM: '/jobs/bloodstorm.png',
   NIGHTWAKER: '/jobs/nightwaker.png',
   CELESTUNE: '/jobs/celestune.png',
   DRAGONSVELTE: '/jobs/dragonsvelte.png',
