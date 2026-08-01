@@ -7,38 +7,43 @@ datasource db {
 }
 
 model Zone {
-  id       Int       @id @default(autoincrement())
-  name     String    @unique
-  label    String
-  sections Section[]
+  id         Int       @id @default(autoincrement())
+  name       String    @unique
+  label      String
+  isPractice Boolean   @default(false)
+  sections   Section[]
 
   @@map("tableZone")
 }
 
 model Section {
-  id        Int        @id @default(autoincrement())
-  name      String
-  zoneId    Int
-  attendees Attendee[]
-  zone      Zone       @relation(fields: [zoneId], references: [id])
+  id                Int        @id @default(autoincrement())
+  name              String
+  zoneId            Int
+  attendees         Attendee[] @relation("MainSection")
+  practiceAttendees Attendee[] @relation("PracticeSection")
+  zone              Zone       @relation(fields: [zoneId], references: [id])
 
   @@map("tableSection")
 }
 
 model Attendee {
-  memberName    String
-  job           String?
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  uid           String          @id
-  attendance    String?
-  attendanceAt  DateTime?
-  sectionId     Int?
-  position      Int?
-  tags          String[]
-  prevSectionId Int?
-  skills        AttendeeSkill[]
-  section       Section?        @relation(fields: [sectionId], references: [id])
+  memberName        String
+  job               String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  uid               String          @id
+  attendance        String?
+  attendanceAt      DateTime?
+  sectionId         Int?
+  position          Int?
+  practiceSectionId Int?
+  practicePosition  Int?
+  tags              String[]
+  prevSectionId     Int?
+  skills            AttendeeSkill[]
+  section           Section?        @relation("MainSection", fields: [sectionId], references: [id])
+  practiceSection   Section?        @relation("PracticeSection", fields: [practiceSectionId], references: [id])
 
   @@index([memberName])
   @@map("tableMemberName")

@@ -12,11 +12,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ section })
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const { kind } = await req.json().catch(() => ({ kind: undefined }))
+  const isPractice = kind === 'practice'
   const result = await prisma.attendee.updateMany({
-    where: { sectionId: Number(id) },
-    data: { sectionId: null, position: null },
+    where: isPractice ? { practiceSectionId: Number(id) } : { sectionId: Number(id) },
+    data: isPractice ? { practiceSectionId: null, practicePosition: null } : { sectionId: null, position: null },
   })
   return NextResponse.json({ cleared: result.count })
 }
