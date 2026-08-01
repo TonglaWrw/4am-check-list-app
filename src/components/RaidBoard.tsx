@@ -1070,6 +1070,11 @@ export default function RaidBoard({ zoneNames, showSpecial, navLinks, kind = 'ma
   const captureRef = useRef<HTMLDivElement>(null)
   const zoneRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
+  async function handleLogout() {
+    await fetch('/api/logout', { method: 'POST' })
+    window.location.href = '/login'
+  }
+
   async function handleCapture(targetName: string) {
     // ถ่ายเฉพาะโซนที่เลือก ถ้าไม่แสดงอยู่ให้ถ่ายทั้งหน้า
     const target = zoneRefs.current[targetName] ?? captureRef.current
@@ -1355,6 +1360,10 @@ export default function RaidBoard({ zoneNames, showSpecial, navLinks, kind = 'ma
                 {nl.label}
               </Link>
             ))}
+            <button onClick={handleLogout}
+              className="px-3 py-1.5 sm:px-5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold border transition-colors backdrop-blur bg-black/30 text-gray-300 border-white/10 hover:bg-white/10">
+              ออกจากระบบ
+            </button>
           </div>
 
           {/* Controls row */}

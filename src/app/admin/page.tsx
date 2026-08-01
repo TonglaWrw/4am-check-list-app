@@ -151,7 +151,11 @@ function AdminContent() {
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-white">Admin — Assign Skill</h1>
-          <a href="/" className="text-sm text-gray-400 hover:text-white transition-colors">← กลับหน้าหลัก</a>
+          <div className="flex items-center gap-4">
+            <a href="/" className="text-sm text-gray-400 hover:text-white transition-colors">← กลับหน้าหลัก</a>
+            <button onClick={async () => { await fetch('/api/logout', { method: 'POST' }); window.location.href = '/login' }}
+              className="text-sm text-gray-400 hover:text-white transition-colors">ออกจากระบบ</button>
+          </div>
         </div>
 
         {message && <p className="text-green-400 text-center mb-4 font-medium">{message}</p>}
